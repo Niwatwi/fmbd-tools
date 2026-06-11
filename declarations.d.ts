@@ -1,0 +1,21 @@
+// declarations.d.ts
+declare module "*.css";
+declare module "*.scss";
+declare module "*.less";
+declare module "*.sass";
+declare module "*.styl";
+declare module "*.svg";
+declare module "*.png";
+declare module "*.jpg";
+declare module "*.jpeg";
+declare module "*.gif";
+declare module "*.bmp";
+declare module "*.webp";
+declare module "*.ico";
+declare module "*.woff";
+declare module "*.woff2";
+declare module "*.eot";
+declare module "*.ttf";
+declare module "*.otf";
+declare module "*.mp4";
+declare module "*.webm";
