@@ -207,7 +207,7 @@ export default function DashboardPage() {
             by FMBD CONTROLLER
           </p>
           <div className="space-y-1 mb-6">
-            <p className="text-lg font-black">{displayName}</p>
+            <p className="text-lg font-black">Niwat Wiyasing</p>
             <p className="text-xs text-slate-400 font-medium">
               Niwat_wiy@riverpro.co.th
             </p>
