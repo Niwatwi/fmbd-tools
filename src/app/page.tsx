@@ -3,228 +3,173 @@
 
 import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { createClient } from "@supabase/supabase-js";
 import {
-  LogOut,
-  LayoutGrid,
-  Barcode,
-  TrendingUp,
-  User,
-  CheckCircle2,
-  RefreshCw,
+  ShieldCheck,
+  MapPin,
+  Coins,
+  History,
+  AlertTriangle,
+  UserCog,
 } from "lucide-react";
+import Swal from "sweetalert2";
+
+const _supabase = createClient(
+  "https://ryqabfpzjmtujfhslovm.supabase.co",
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJ5cWFiZnB6am10dWpmaHNsb3ZtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY5NjE2ODEsImV4cCI6MjA5MjUzNzY4MX0.D2DKpUHQgZmcc_XCTa1wbV0Yak9HCGy1OJHptpQFato",
+);
 
 export default function DashboardPage() {
   const router = useRouter();
+  const [currentTime, setCurrentTime] = useState("");
   const [displayName, setDisplayName] = useState("");
-  const [isReady, setIsReady] = useState(false);
-  const [currentTime, setCurrentTime] = useState<string>("");
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    const timer = setInterval(() => {
-      setCurrentTime(new Date().toLocaleTimeString("th-TH"));
-    }, 1000);
-    return () => clearInterval(timer);
+    const updateClock = () => {
+      const now = new Date();
+      setCurrentTime(
+        now.toLocaleDateString("th-TH", {
+          weekday: "long",
+          year: "numeric",
+          month: "long",
+          day: "numeric",
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit",
+          hour12: false,
+        }) + " น.",
+      );
+    };
+    updateClock();
+    const interval = setInterval(updateClock, 1000);
+    return () => clearInterval(interval);
   }, []);
 
   useEffect(() => {
-    const storedName = localStorage.getItem("userName");
-    if (!storedName) {
+    const storedName =
+      localStorage.getItem("userName") ||
+      localStorage.getItem("username") ||
+      "";
+    const storedCode =
+      localStorage.getItem("userCode") ||
+      localStorage.getItem("usercode") ||
+      "";
+
+    if (storedName) {
+      setDisplayName(storedName);
+      const adminUsers = ["admin", "admin_niwat"];
+      setIsAdmin(
+        adminUsers.includes(storedName.toLowerCase()) ||
+          storedCode === "FMBD03",
+      );
+      setIsLoading(false);
+    } else {
       router.push("/login");
-      return;
     }
-    setDisplayName(storedName);
-    setIsReady(true);
   }, [router]);
 
-  const handleLogout = () => {
-    localStorage.clear();
-    router.push("/login");
+  const handleSignOut = () => {
+    Swal.fire({
+      title: "ออกจากระบบ?",
+      text: "ยืนยันการออกจากเซสชันนี้ครับพี่?",
+      icon: "warning",
+      showCancelButton: true,
+      confirmButtonColor: "#d33",
+      confirmButtonText: "ออกจากระบบ",
+    }).then((result) => {
+      if (result.isConfirmed) {
+        localStorage.clear();
+        router.push("/login");
+      }
+    });
   };
 
-  if (!isReady) return null;
+  if (isLoading)
+    return (
+      <div className="min-h-screen bg-blue-900 flex items-center justify-center text-white">
+        กำลังโหลด...
+      </div>
+    );
 
   return (
-    <div className="min-h-screen bg-[#F0F4F8] font-sans text-slate-800">
-      <link
-        rel="stylesheet"
-        href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css"
-      />
-
-      {/* HEADER: โลโก้, ชื่อบริษัท, ปุ่ม Logout */}
-      <header className="bg-white/80 backdrop-blur-xl border-b border-slate-200 py-3 px-4 sticky top-0 z-50 shadow-sm">
-        <div className="max-w-5xl mx-auto flex justify-between items-center">
-          {/* Logo & Company Name */}
-          <div className="flex items-center gap-2">
-            <img src="/rvp.png" alt="RVP Logo" className="h-8 w-auto" />
-            <div>
-              <h1 className="text-slate-900 text-[9px] sm:text-[11px] font-black tracking-wide leading-tight">
-                Riverpro Intertrade Co., Ltd.
-              </h1>
-              <p className="text-blue-600 text-[8px] sm:text-[9px] font-bold uppercase tracking-widest leading-tight">
-                FMBD Central Hub
-              </p>
-            </div>
+    <div className="min-h-screen bg-gradient-to-tr from-[#060af8] via-[#efb2eb] to-[#E8EFF5] font-sans pb-16 text-slate-800">
+      <header className="bg-blue-800/90 backdrop-blur-md border-b border-white/60 py-4 px-4 sticky top-0 z-50 shadow-lg">
+        <div className="max-w-4xl mx-auto flex justify-between items-center">
+          <div className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-500/20 rounded-xl text-emerald-300 text-xs font-black border border-emerald-400/30">
+            <ShieldCheck className="w-3.5 h-3.5" /> ระบบปลอดภัย
           </div>
-
-          {/* Right Section: Time, Refresh, Logout */}
-          <div className="flex items-center gap-2 sm:gap-4">
-            <div className="text-right">
-              <p className="text-[9px] font-black text-slate-400 uppercase tracking-tight hidden sm:block">
-                Time
-              </p>
-              <p className="text-[10px] sm:text-xs font-mono font-bold text-slate-700">
-                {currentTime}
-              </p>
-            </div>
-            <button
-              onClick={() => window.location.reload()}
-              className="p-2 bg-slate-100 rounded-lg text-slate-500 hover:text-blue-600 transition-all"
-            >
-              <RefreshCw className="w-3 h-3 sm:w-4 sm:h-4" />
-            </button>
-            <button
-              onClick={handleLogout}
-              className="p-2 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 transition-all"
-              title="ออกจากระบบ"
-            >
-              <LogOut className="w-3 h-3 sm:w-4 sm:h-4" />
-            </button>
-          </div>
+          <button
+            onClick={handleSignOut}
+            className="text-rose-300 font-black text-xs bg-rose-500/10 px-3.5 py-2 rounded-xl border border-rose-500/20"
+          >
+            ออกจากระบบ
+          </button>
         </div>
       </header>
 
-      <main className="max-w-5xl mx-auto px-4 py-8 space-y-8">
-        {/* BANNER */}
-        <div className="bg-gradient-to-tr from-blue-600 via-indigo-500 to-purple-500 rounded-[2rem] p-6 sm:p-8 text-white shadow-xl relative overflow-hidden">
-          <div className="relative z-10">
-            <h2 className="text-xl sm:text-2xl font-black mb-1">
-              สวัสดีครับ, คุณ{displayName}! 👋
-            </h2>
-            <p className="text-blue-100 text-[10px] sm:text-xs font-medium">
-              ระบบปฏิบัติการหน้าร้าน พร้อมใช้งานแล้วครับ
-            </p>
-          </div>
+      <main className="max-w-4xl mx-auto px-4 mt-6 space-y-8">
+        <div className="bg-white p-6 rounded-[28px] shadow-sm">
+          <p className="text-lg font-black">{displayName}</p>
+          <p className="text-xs text-slate-400 font-medium">
+            Niwat_wiy@riverpro.co.th
+          </p>
         </div>
 
-        {/* STATUS GRID */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          {[
-            {
-              icon: User,
-              label: "สถานะการลงเวลา",
-              val: "ระบบพร้อมทำงาน",
-              color: "text-blue-600",
-              bg: "bg-blue-50",
-            },
-            {
-              icon: LayoutGrid,
-              label: "อัปเดตข้อมูล",
-              val: "ฐานข้อมูลออนไลน์",
-              color: "text-emerald-600",
-              bg: "bg-emerald-50",
-            },
-            {
-              icon: CheckCircle2,
-              label: "งานที่รอดำเนินการ",
-              val: "ตรวจสอบ Call Visit",
-              color: "text-amber-600",
-              bg: "bg-amber-50",
-            },
-          ].map((item, i) => (
+        <section className="space-y-4">
+          <h2 className="text-sm font-black text-slate-900 uppercase">
+            งานสนามประจำวัน
+          </h2>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <div
-              key={i}
-              className="bg-white rounded-3xl p-5 flex items-center gap-4 shadow-sm border border-slate-100"
+              onClick={() => router.push("/checkin")}
+              className="cursor-pointer bg-white rounded-[28px] p-6 shadow-md hover:border-amber-400 border-2 transition-all"
             >
+              <MapPin className="w-8 h-8 text-amber-500 mb-2" />
+              <h3 className="text-sm font-black">เช็คอินปฏิบัติงาน</h3>
+            </div>
+            <div
+              onClick={() => router.push("/add-price")}
+              className="cursor-pointer bg-white rounded-[28px] p-6 shadow-md hover:border-emerald-400 border-2 transition-all"
+            >
+              <Coins className="w-8 h-8 text-emerald-500 mb-2" />
+              <h3 className="text-sm font-black">บันทึกราคา</h3>
+            </div>
+            <div
+              onClick={() => router.push("/my-history")}
+              className="cursor-pointer bg-white rounded-[28px] p-6 shadow-md hover:border-blue-400 border-2 transition-all"
+            >
+              <History className="w-8 h-8 text-blue-500 mb-2" />
+              <h3 className="text-sm font-black">ประวัติงาน</h3>
+            </div>
+          </div>
+        </section>
+
+        {isAdmin && (
+          <section className="space-y-4 bg-slate-900 p-6 rounded-[30px] border-2 border-rose-500">
+            <h2 className="text-sm font-black text-white uppercase">
+              แผงควบคุมแอดมิน
+            </h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div
-                className={`w-10 h-10 ${item.bg} ${item.color} rounded-2xl flex items-center justify-center`}
+                onClick={() => router.push("/admin-users")}
+                className="cursor-pointer bg-rose-50 rounded-[28px] p-6 border-2 border-rose-200 hover:border-rose-500 transition-all"
               >
-                <item.icon className="w-4 h-4" />
+                <UserCog className="w-8 h-8 text-rose-600 mb-2" />
+                <h3 className="text-sm font-black">Admin Management</h3>
               </div>
-              <div>
-                <p className="text-[9px] text-slate-400 font-bold uppercase">
-                  {item.label}
-                </p>
-                <p className="text-xs font-black text-slate-800">{item.val}</p>
+              <div
+                onClick={() => router.push("/oos-warroom")}
+                className="cursor-pointer bg-rose-50 rounded-[28px] p-6 border-2 border-rose-200 hover:border-rose-500 transition-all"
+              >
+                <AlertTriangle className="w-8 h-8 text-rose-600 mb-2" />
+                <h3 className="text-sm font-black">OOS Warroom</h3>
               </div>
             </div>
-          ))}
-        </div>
-
-        {/* APPS GRID */}
-        <div className="space-y-4">
-          <h3 className="text-xs font-black text-slate-800 uppercase tracking-widest flex items-center gap-2">
-            <LayoutGrid className="w-4 h-4 text-blue-600" /> ระบบปฏิบัติการ
-            (Store Apps)
-          </h3>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
-            {[
-              {
-                title: "ลงเวลาเข้า-ออก",
-                icon: User,
-                color: "bg-blue-500",
-                path: "/checkin",
-              },
-              {
-                title: "จัดการสินค้า",
-                icon: Barcode,
-                color: "bg-emerald-500",
-                path: "https://rvi-market-intelligence.vercel.app/",
-              },
-              {
-                title: "War Room (OOS)",
-                icon: TrendingUp,
-                color: "bg-purple-500",
-                path: "/auditor",
-              },
-            ].map((app, i) => (
-              <div
-                key={i}
-                onClick={() =>
-                  app.path.startsWith("http")
-                    ? window.open(app.path, "_blank")
-                    : router.push(app.path)
-                }
-                className="bg-white rounded-3xl p-6 shadow-sm border border-slate-100 hover:border-blue-300 hover:shadow-xl transition-all cursor-pointer group h-40 flex flex-col justify-between"
-              >
-                <div
-                  className={`w-12 h-12 ${app.color} text-white rounded-2xl flex items-center justify-center shadow-lg group-hover:scale-105 transition-transform`}
-                >
-                  <app.icon className="w-5 h-5" />
-                </div>
-                <h4 className="text-sm font-black text-slate-800">
-                  {app.title}
-                </h4>
-              </div>
-            ))}
-          </div>
-        </div>
+          </section>
+        )}
       </main>
-
-      {/* FOOTER */}
-      <footer className="mt-12 bg-slate-900 text-white py-10 px-6 rounded-t-[3rem] shadow-2xl">
-        <div className="max-w-md mx-auto text-center">
-          <p className="text-[10px] font-black uppercase tracking-widest text-blue-400 mb-4">
-            by FMBD CONTROLLER
-          </p>
-          <div className="space-y-1 mb-6">
-            <p className="text-lg font-black">Niwat Wiyasing</p>
-            <p className="text-xs text-slate-400 font-medium">
-              Niwat_wiy@riverpro.co.th
-            </p>
-            <div className="flex justify-center gap-4 text-xs font-bold mt-2 text-slate-300">
-              <span className="flex items-center gap-2">
-                <i className="fa-brands fa-line text-green-400"></i> niwatwi
-              </span>
-              <span className="flex items-center gap-1">
-                <i className="fa-solid fa-phone text-blue-400"></i> 065-806-4694
-              </span>
-            </div>
-          </div>
-          <p className="text-[9px] opacity-40 mt-8">
-            © 2026 Riverpro Intertrade Co., Ltd.
-          </p>
-        </div>
-      </footer>
     </div>
   );
 }
