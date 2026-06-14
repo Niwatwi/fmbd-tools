@@ -277,7 +277,7 @@ export default function AddPricePage() {
       sub_category: detectedProduct.sub_category || "",
       segment: detectedProduct.segment || "",
       company: detectedProduct.company || "",
-      company_type: detectedProduct.competitor || "",
+      company_type: detectedProduct.company_type || "",
       brand_type: detectedProduct.brand_type || "",
       brand: detectedProduct.brand || "",
       sub_brand: detectedProduct.sub_brand || "",
@@ -308,7 +308,7 @@ export default function AddPricePage() {
     setShelfViewPreview("");
   };
 
-  // 🚀 6. บันทึกทุกรายการและยิงไลน์แบบสับราง
+  // 🚀 6. บันทึกทุกรายการและยิงไลน์แบบสับราง (เวอร์ชันอัปเกรดพิกัด + ผูก ID ลูกค้าคำนวณ KPI)
   const handleSaveAllSurveys = async () => {
     if (surveyCart.length === 0) return;
     setIsSubmitting(true);
@@ -325,6 +325,7 @@ export default function AddPricePage() {
       const surveyorName = localStorage.getItem("userName") || "Unknown";
       const merCode = localStorage.getItem("userCode") || "Unknown";
 
+      // 🛰️ 1. ดึงพิกัดสดๆ จากดาวเทียมบนหน้าเครื่องพนักงานผ่านเบราว์เซอร์ (High Accuracy)
       let currentLat: number | null = null;
       let currentLng: number | null = null;
       let gpsAccuracy: number | null = null;
@@ -333,7 +334,7 @@ export default function AddPricePage() {
         const position = await new Promise<GeolocationPosition>(
           (resolve, reject) => {
             navigator.geolocation.getCurrentPosition(resolve, reject, {
-              enableHighAccuracy: true,
+              enableHighAccuracy: true, // บังคับเปิด GPS แท้ ไม่ใช้เสามือถือ
               timeout: 8000,
               maximumAge: 0,
             });
@@ -341,21 +342,23 @@ export default function AddPricePage() {
         );
         currentLat = position.coords.latitude;
         currentLng = position.coords.longitude;
-        gpsAccuracy = position.coords.accuracy;
+        gpsAccuracy = position.coords.accuracy; // รัศมีความคลาดเคลื่อน (เมตร)
       } catch (gpsErr) {
         console.warn(
           "⚠️ สัญญาณ GPS ขัดข้อง หรือพนักงานไม่ได้เปิดสิทธิ์:",
           gpsErr,
         );
+        // ถ้าระบบ GPS หลุด ให้ใช้ค่าจากสเต็ปเช็คอินในแอปสสำรอง (ถ้ามี)
         currentLat = localStorage.getItem("hidden_lat")
           ? parseFloat(localStorage.getItem("hidden_lat")!)
           : null;
         currentLng = localStorage.getItem("hidden_lng")
           ? parseFloat(localStorage.getItem("hidden_lng")!)
           : null;
-        gpsAccuracy = 999;
+        gpsAccuracy = 999; // กำหนดค่า Error พิเศษไว้ตรวจสอบ KPI
       }
 
+      // 📏 2. ฟังก์ชันคำนวณระยะห่างระหว่างพนักงานกับสาขา (หน่วยเป็นเมตร)
       let distanceMeters = null;
       if (
         currentLat &&
@@ -364,7 +367,7 @@ export default function AddPricePage() {
         currentStore.lat &&
         currentStore.lng
       ) {
-        const R = 6371e3;
+        const R = 6371e3; // รัศมีโลกเฉลี่ย (เมตร)
         const dLat = ((currentStore.lat - currentLat) * Math.PI) / 180;
         const dLon = ((currentStore.lng - currentLng) * Math.PI) / 180;
         const a =
@@ -374,7 +377,7 @@ export default function AddPricePage() {
             Math.sin(dLon / 2) *
             Math.sin(dLon / 2);
         const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-        distanceMeters = Math.round(R * c);
+        distanceMeters = Math.round(R * c); // ได้ระยะห่างเป็นเมตรตรงๆ แม่นยำสูง
       }
 
       const uploadedItemsForLine: any[] = [];
@@ -383,6 +386,7 @@ export default function AddPricePage() {
         let price_tag_url = "";
         let shelf_view_url = "";
 
+        // อัปโหลดไฟล์ภาพป้ายราคาเข้า Storage
         if (item.priceTagFile) {
           const fileExt = item.priceTagFile.name.split(".").pop();
           const fileName = `${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
@@ -400,6 +404,7 @@ export default function AddPricePage() {
           price_tag_url = urlData.publicUrl;
         }
 
+        // อัปโหลดไฟล์ภาพหน้าชั้นวางเข้า Storage
         if (item.shelfViewFile) {
           const fileExt = item.shelfViewFile.name.split(".").pop();
           const fileName = `${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
@@ -415,6 +420,7 @@ export default function AddPricePage() {
           shelf_view_url = urlData.publicUrl;
         }
 
+        // 🔍 3. สืบหาข้อมูล customer_id เพื่อเอามาผูกความสัมพันธ์ตาราง (แก้ปัญหาสินค้าไม่มี ID ติดมา)
         let resolvedCustomerId = item.customer_id;
         if (!resolvedCustomerId && item.company) {
           let searchCompanyName = item.company;
@@ -425,6 +431,7 @@ export default function AddPricePage() {
           ) {
             searchCompanyName = "RVP";
           }
+          // วิ่งไปเคาะตารางลูกค้าดึง ID มาแมตช์ให้แบบสดๆ
           const { data: custRow } = await _supabase
             .from("customers")
             .select("id")
@@ -436,6 +443,7 @@ export default function AddPricePage() {
           }
         }
 
+        // 📝 ประกอบโครงสร้างข้อมูลเตรียมยิงจมลงตาราง price_surveys แบบครบถ้วนทุกช่อง
         const record = {
           area: selectedArea,
           chanel: chanel,
@@ -457,13 +465,13 @@ export default function AddPricePage() {
           pack_name: item.pack_name,
           descriptions: item.descriptions,
           price: parseFloat(item.price) || 0,
-          // 🔥 เคลียร์ 2 บรรทัดเจ้าปัญหาออกเรียบร้อยแล้วครับ
           promo_price: parseFloat(item.promo_price) || 0,
           promo_details: item.promo_details || "",
           price_tag_url: price_tag_url || null,
           shelf_view_url: shelf_view_url || null,
           surveyor_name: surveyorName,
           mer_code: merCode,
+          // 🎯 ข้อมูลทองคำสำหรับคำนวณ KPI ถูกป้อนเข้าตารางตรงนี้แล้วครับพี่นิวาส!
           lat: currentLat,
           lng: currentLng,
           gps_accuracy: gpsAccuracy,
@@ -488,7 +496,7 @@ export default function AddPricePage() {
           promo_details: item.promo_details,
           off_take: item.off_take,
           company: item.company,
-          competitor: item.company_type,
+          company_type: item.company_type,
           category: item.category,
           price_tag_url: price_tag_url || null,
           shelf_view_url: shelf_view_url || null,
@@ -496,6 +504,7 @@ export default function AddPricePage() {
         });
       }
 
+      // 🔔 นำส่งข้อมูลสรุปเข้า LINE OA (Carousel สไลด์แผ่นละ 5 SKU ประหยัดงบ)
       try {
         const res = await fetch("/api/line", {
           method: "POST",
@@ -544,9 +553,9 @@ export default function AddPricePage() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-tr from-[#060af8] via-[#efb2eb] to-[#E8EFF5] font-sans pb-12 text-slate-800">
+    <div className="min-h-screen bg-gradient-to-tr from-[#EBF3FA] via-[#F3F7FA] to-[#E8EFF5] font-sans pb-12 text-slate-800">
       {/* HEADER BAR STYLE: MODERN 3D GLASSMORPHISM */}
-      <header className="bg-blue-800/90 backdrop-blur-md border-b border-white/60 py-4 px-4 sticky top-0 z-50 shadow-[0_10px_30px_rgba(0,91,183,0.06)]">
+      <header className="bg-white/90 backdrop-blur-md border-b border-white/60 py-4 px-4 sticky top-0 z-50 shadow-[0_10px_30px_rgba(0,91,183,0.06)]">
         <div className="max-w-3xl mx-auto flex flex-col gap-3">
           <div className="flex justify-between items-center">
             <button
@@ -591,7 +600,7 @@ export default function AddPricePage() {
           {/* เส้นขีดคั่น Vivid Gradient Line เพิ่มความพรีเมียม */}
           <div className="bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500 h-[3px] w-full rounded-full shadow-[0_2px_6px_rgba(99,102,241,0.2)]"></div>
 
-          <h2 className="text-white font-black text-center text-xs tracking-widest uppercase mt-0.5">
+          <h2 className="text-slate-700 font-black text-center text-xs tracking-widest uppercase mt-0.5">
             บันทึกข้อมูลสำรวจราคาตลาด
           </h2>
         </div>

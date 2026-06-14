@@ -410,7 +410,7 @@ export default function CompleteRightThemeInputPage() {
     selectedAccount,
   ]);
 
-  const companyTypeOptions = ["Company", "Competitor"];
+  const companyTypeOptions = ["Company", "CompanyType"];
 
   const addItemRow = () => {
     setItems((prev) => [

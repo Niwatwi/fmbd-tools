@@ -54,11 +54,11 @@ export default function MyHistoryPage() {
   }, [fetchMyHistory]);
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-zinc-900 to-black font-sans antialiased p-4 pb-10 max-w-md mx-auto text-white">
+    <div className="min-h-screen bg-gradient-to-br from-blue-800 via-zinc-200 to-slate-100 font-sans antialiased p-4 pb-10 max-w-md mx-auto text-white">
       {/* ปุ่มกลับหน้าหลัก */}
       <button
         onClick={() => router.push("/auditor")}
-        className="mb-6 flex items-center gap-2 text-[10px] font-black text-zinc-400 hover:text-white transition-all bg-zinc-800 px-4 py-2 rounded-full border border-white/10"
+        className="mb-6 flex items-center gap-2 text-[10px] font-black text-blue-700 hover:text-white transition-all bg-white px-4 py-2 rounded-full border border-white/10"
       >
         <i className="fa-solid fa-arrow-left"></i> กลับหน้าหลัก
       </button>
@@ -77,13 +77,13 @@ export default function MyHistoryPage() {
           {historyData.map((visit) => (
             <div
               key={visit.id}
-              className="bg-zinc-900 border border-white/10 p-5 rounded-2xl shadow-lg relative"
+              className="bg-zinc-800 border border-white/10 p-5 rounded-2xl shadow-lg relative"
             >
               <div className="flex justify-between mb-3 border-b border-white/5 pb-3">
                 <span className="text-[11px] font-black text-blue-400 truncate">
                   {visit.store_name}
                 </span>
-                <span className="text-[9px] text-zinc-500 font-bold">
+                <span className="text-[9px] text-white font-bold">
                   {new Date(visit.created_at).toLocaleString("th-TH")}
                 </span>
               </div>
@@ -94,11 +94,11 @@ export default function MyHistoryPage() {
                     key={idx}
                     className="flex justify-between items-center text-[10px] font-bold bg-white/5 p-2 rounded-lg"
                   >
-                    <span className="text-zinc-300 truncate max-w-[70%]">
+                    <span className="text-white truncate max-w-[70%]">
                       {item.descriptions}
                     </span>
                     <span
-                      className={`px-2 py-0.5 rounded-md text-[9px] ${item.status === "approved" ? "bg-green-900/50 text-green-400" : "bg-amber-900/50 text-amber-400"}`}
+                      className={`px-2 py-0.5 rounded-md text-[9px] ${item.status === "approved" ? "bg-green-900/50 text-green-400" : "bg-yellow-400 text-red-600"}`}
                     >
                       {item.status || "Pending"}
                     </span>
