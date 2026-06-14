@@ -19,7 +19,7 @@ interface ProductRow {
   imageurl?: string;
   category?: string;
   brand?: string;
-  competitor?: string | null;
+  company_type?: string | null;
   barcode?: string | null;
   is_active?: boolean;
 }
@@ -115,14 +115,12 @@ export default function CompleteRightThemeInputPage() {
 
   const [loading, setLoading] = useState<boolean>(false);
 
-  // ใน src/app/input/page.tsx
   useEffect(() => {
     const checkAuth = () => {
       const storedUsername = localStorage.getItem("userCode");
       console.log("Debug Auth -> storedUsername:", storedUsername);
 
       if (!storedUsername) {
-        // ถ้าไม่มี userCode ให้ดีดกลับหน้า Login ทันที
         router.push("/login");
         return;
       }
@@ -172,8 +170,6 @@ export default function CompleteRightThemeInputPage() {
     }
   }, []);
 
-  console.log(supabase);
-
   useEffect(() => {
     if (selectedStore) {
       startTransition(() => {
@@ -192,7 +188,6 @@ export default function CompleteRightThemeInputPage() {
 
     setIsReplying(commentId);
     try {
-      // ✅ บังคับแคสต์ประเภทตัวเชื่อมตารางหลักเพื่อขจัด Type 'never' ของ Supabase
       const { error } = await (supabase.from("oos_comments") as any)
         .update({
           auditor_reply: replyText,
@@ -259,13 +254,13 @@ export default function CompleteRightThemeInputPage() {
           supabase
             .from("products")
             .select(
-              "descriptions, company, imageurl, category, brand, competitor, barcode",
+              "descriptions, company, imageurl, category, brand, company_type, barcode",
             )
             .eq("is_active", true),
         ]);
 
         if (storesRes.data) {
-          const storesData = storesRes.data as unknown as StoreMasterRow[]; // ✅ แก้ Property does not exist on type 'never' แบบถูกหลักสากล
+          const storesData = storesRes.data as unknown as StoreMasterRow[];
           const uniqueAreas = Array.from(
             new Set(storesData.map((s) => s.area).filter(Boolean)),
           );
@@ -489,7 +484,6 @@ export default function CompleteRightThemeInputPage() {
         (s) => s.store_name === selectedStore,
       );
 
-      // ✅ บังคับแคสต์ประเภทตัวเชื่อมตารางเพื่อรับข้อมูล visitData.id แบบปลอดภัย ไร้สายแดง 'never' กวนใจ
       const { data: visitData, error: visitError = null } = await (
         supabase.from("store_visits") as any
       )
@@ -537,7 +531,6 @@ export default function CompleteRightThemeInputPage() {
         };
       });
 
-      // ✅ บังคับแคสต์ท่อส่งข้อมูลไอเทมสินค้าขาด oos_items หนี Type 'never[]' หลุดรอดทุกช่องทางบิวด์
       const { error: itemsError } = await (
         supabase.from("oos_items") as any
       ).insert(itemsToSave);
@@ -766,7 +759,6 @@ export default function CompleteRightThemeInputPage() {
                       const val = e.target.value;
                       setSelectedAuditor(val);
 
-                      // 🚀 ย้ายลอจิกถอดรหัสไดนามิกส์มาตรงนี้เพื่อแก้บั๊กเซ็ตสเตทวนลูปใน useEffect ครับพี่นิวาส
                       if (val) {
                         let derivedArea = "";
                         if (val.startsWith("K")) {
@@ -944,9 +936,10 @@ export default function CompleteRightThemeInputPage() {
                 const rowAvailableCompanies = dbProducts
                   .filter((p) => {
                     if (!item.companyType) return true;
-                    return p.competitor === item.companyType;
+                    return p.company_type === item.companyType;
                   })
                   .map((p) => p.company);
+
                 const uniqueCompanies = Array.from(
                   new Set(rowAvailableCompanies),
                 ).sort();
@@ -1030,7 +1023,7 @@ export default function CompleteRightThemeInputPage() {
                             updateItemField(item.id, "category", "");
                             updateItemField(item.id, "product", "");
                           }}
-                          className="w-full px-2 py-1.5 border border-slate-200 rounded-lg text-[10px] font-bold text-slate-700 outline-none bg-slate-50/50"
+                          className="w-full px-2 py-1.5 border border-slate-200 rounded-lg text-[10px] font-bold text-slate-700 outline-none bg-white"
                         >
                           <option value="">-- เลือกบริษัท --</option>
                           {uniqueCompanies.map((c) => (
