@@ -4,10 +4,6 @@ const nextConfig = {
     typescript: {
         ignoreBuildErrors: true,
     },
-    // 💡 สั่งข้ามการตรวจจับกฎ ESLint กวนใจตอนสั่งรันออนไลน์
-    eslint: {
-        ignoreDuringBuilds: true,
-    },
 };
 
 export default nextConfig;
