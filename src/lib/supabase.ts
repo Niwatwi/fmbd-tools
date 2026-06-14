@@ -1,14 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-
-// 💡 ใส่ log ตรงนี้เพื่อเช็คว่า Next.js โหลดค่ามาได้ไหม
-console.log("DEBUG Supabase URL:", supabaseUrl);
-console.log("DEBUG Supabase Key:", supabaseAnonKey ? "Loaded" : "Missing");
-
-if (!supabaseUrl || !supabaseAnonKey) {
-  throw new Error("❌ NEXT_PUBLIC_SUPABASE_URL หรือ KEY ยังโหลดไม่ติดครับพี่!");
-}
+const supabaseUrl = "https://ryqabfpzjmtujfhslovm.supabase.co";
+const supabaseAnonKey =
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJ5cWFiZnB6am10dWpmaHNsb3ZtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY5NjE2ODEsImV4cCI6MjA5MjUzNzY4MX0.D2DKpUHQgZmcc_XCTa1wbV0Yak9HCGy1OJHptpQFato";
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
