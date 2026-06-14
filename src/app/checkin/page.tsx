@@ -1,3 +1,5 @@
+/* eslint-disable @next/next/no-img-element */
+/* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
@@ -47,68 +49,85 @@ export default function CheckinPage() {
   const [selectedStore, setSelectedStore] = useState("");
   const [isCheckIn, setIsCheckIn] = useState(false);
   const [isCheckOut, setIsCheckOut] = useState(false);
+
   const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [imageFile, setImageFile] = useState<File | null>(null);
+
   const [isLoadingStores, setIsLoadingStores] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // 💡 สถานะสำหรับระบบตัวกรอง Chanel และ Account
   const [selectedChanel, setSelectedChanel] = useState("");
-  const [selectedAccount, setSelectedAccount] = useState(""); // 👈 แก้ไขบรรทัดนี้ให้สมบูรณ์ครับพี่
+  const [selectedAccount, setSelectedAccount] = useState("");
 
-  // พิกัด GPS เครื่องพนักงาน
   const [deviceLat, setDeviceLat] = useState<number | null>(null);
   const [deviceLng, setDeviceLng] = useState<number | null>(null);
-  const [gpsStatus, setGpsStatus] = useState("กำลังค้นหาสัญญาณดาวเทียม...");
+  const [gpsStatus, setGpsStatus] = useState("กำลังตรวจสอบสิทธิ์ GPS...");
   const [isGpsReady, setIsGpsReady] = useState(false);
 
-  // ข้อมูลผู้ใช้งานที่ล็อกอินเข้ามาจริง
   const [userCode, setUserCode] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [companyTag, setCompanyTag] = useState("");
 
+  const triggerCamera = () => {
+    fileInputRef.current?.click();
+  };
+
+  const uploadImageToStorage = async (file: File): Promise<string | null> => {
+    try {
+      const fileExt = file.name.split(".").pop();
+      const fileName = `attendance/${userCode}_${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExt}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from("attendance-images")
+        .upload(fileName, file);
+
+      if (uploadError) throw uploadError;
+
+      const { data } = supabase.storage
+        .from("attendance-images")
+        .getPublicUrl(fileName);
+      return data.publicUrl;
+    } catch (err) {
+      console.error("Upload failed:", err);
+      return null;
+    }
+  };
+
   const fetchCurrentLocation = () => {
     if (!navigator.geolocation) {
-      setGpsStatus("เบราว์เซอร์ของท่านไม่รองรับการดึง GPS");
+      setGpsStatus("เบราว์เซอร์ไม่รองรับ GPS");
       return;
     }
+
     setIsGpsReady(false);
-    setGpsStatus("กำลังจับพิกัดความละเอียดสูง...");
+    setGpsStatus("กำลังจับพิกัดดาวเทียม...");
 
     navigator.geolocation.getCurrentPosition(
       (position) => {
         setDeviceLat(position.coords.latitude);
         setDeviceLng(position.coords.longitude);
-        setGpsStatus("ยืนยันพิกัดตัวเครื่องสำเร็จ");
+        setGpsStatus("ยืนยันพิกัดเรียบร้อย");
         setIsGpsReady(true);
       },
       (error) => {
-        console.error("GPS Error:", error);
         setIsGpsReady(false);
-        setGpsStatus("❌ กรุณาเปิดสิทธิ์ GPS บนอุปกรณ์ของท่าน");
+        // เพิ่ม Error Handling เพื่อให้รู้ว่าติดที่ Permission หรือ timeout
+        if (error.code === error.PERMISSION_DENIED) {
+          setGpsStatus(
+            "❌ ถูกปฏิเสธสิทธิ์เข้าถึงตำแหน่ง (โปรดเปิดสิทธิ์ใน Setting)",
+          );
+        } else {
+          setGpsStatus("❌ ไม่สามารถจับพิกัดได้ (โปรดเช็คสัญญาณ GPS)");
+        }
       },
-      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 },
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 },
     );
   };
 
   useEffect(() => {
-    const link: HTMLLinkElement =
-      document.querySelector("link[rel*='icon']") ||
-      document.createElement("link");
-    link.type = "image/x-icon";
-    link.rel = "shortcut icon";
-    link.href = "/assets/rvp.png";
-    document.getElementsByTagName("head")[0].appendChild(link);
-
     fetchCurrentLocation();
-
-    const storedUsername =
-      localStorage.getItem("userCode") ||
-      localStorage.getItem("username") ||
-      "M00000";
-    const storedName =
-      localStorage.getItem("userName") ||
-      localStorage.getItem("employeeName") ||
-      "ไม่ระบุชื่อพนักงาน";
+    const storedUsername = localStorage.getItem("userCode") || "M00000";
+    const storedName = localStorage.getItem("userName") || "ไม่ระบุชื่อพนักงาน";
     const storedTag = localStorage.getItem("companyTag") || "AUDITOR";
 
     setUserCode(storedUsername);
@@ -135,7 +154,6 @@ export default function CheckinPage() {
     return () => clearInterval(clockInterval);
   }, []);
 
-  // ดึงข้อมูลร้านค้าทั้งหมดจากตาราง stores
   useEffect(() => {
     const getSupabaseStores = async () => {
       try {
@@ -144,7 +162,6 @@ export default function CheckinPage() {
           .from("stores")
           .select("*")
           .order("store_name", { ascending: true });
-
         if (error) throw error;
         if (data) setStores(data as StoreData[]);
       } catch (err: any) {
@@ -156,56 +173,17 @@ export default function CheckinPage() {
     getSupabaseStores();
   }, []);
 
-  // 🎯 ปรับลอจิกคัดกรองด่านแรกขั้นเทพ ถอดรหัสหาเขตตามโครงสร้างองค์กรจริง
-  const getBaseFilteredStores = () => {
+  const baseStores = stores.filter((store) => {
     const cleanUserCode = userCode.trim().toUpperCase();
-    const cleanTag = companyTag.trim().toUpperCase();
+    if (companyTag.includes("ADMIN")) return true;
+    if (cleanUserCode.startsWith("M"))
+      return store.mer_code?.toUpperCase() === cleanUserCode;
+    return true;
+  });
 
-    // ด่านที่ 0: สิทธิ์ระดับ ADMIN ให้ทะลุเห็นทุกร้านค้า 100%
-    if (cleanTag.includes("ADMIN") || cleanUserCode.includes("ADMIN")) {
-      return stores;
-    }
-
-    // ด่านที่ 1: กลุ่มรหัส K01 - K08 (KOE) -> จับคู่กรองตามคอลัมน์ store.area โดยตรง
-    const matchKoeArea =
-      cleanUserCode.match(/K0[1-8]/) || cleanTag.match(/K0[1-8]/);
-    if (matchKoeArea) {
-      return stores.filter(
-        (store) => store.area?.toUpperCase() === matchKoeArea[0],
-      );
-    }
-
-    // ด่านที่ 2: กลุ่มรหัส C (COMMANDO) -> สกัดหาเขตจากรหัสพนักงาน (เช่น C07001 -> K07)
-    if (cleanUserCode.startsWith("C") && cleanUserCode.length >= 3) {
-      const areaNumber = cleanUserCode.substring(1, 3);
-      const targetArea = `K${areaNumber}`;
-
-      // ดึงร้านค้าทั้งหมดที่อยู่ในเขตพื้นที่รับผิดชอบของ KOE คนนั้นให้ COMMANDO เข้าทำงานแทนได้ทั้งหมด
-      return stores.filter((store) => store.area?.toUpperCase() === targetArea);
-    }
-
-    // ด่านที่ 3: กลุ่มรหัส M (MER) -> วิ่งเฉพาะร้านที่มีรหัสกำกับตรงตัวในคอลัมน์ mer_code เท่านั้น
-    if (cleanUserCode.startsWith("M")) {
-      return stores.filter(
-        (store) => store.mer_code?.toUpperCase() === cleanUserCode,
-      );
-    }
-
-    // ด่านสุดท้ายกรณีหลุดโผ (Fallback)
-    return stores.filter(
-      (store) =>
-        store.mer_code?.toUpperCase() === cleanUserCode ||
-        store.area?.toUpperCase() === cleanUserCode,
-    );
-  };
-
-  const baseStores = getBaseFilteredStores();
-
-  // 💡 สเต็ปที่ 2: ดึงรายชื่อตัวเลือก Chanel และ Account ที่ไม่ซ้ำกันมาโชว์ในดรอบดาวน์
   const uniqueChanels = Array.from(
     new Set(baseStores.map((s) => s.chanel).filter(Boolean)),
   );
-
   const uniqueAccounts = Array.from(
     new Set(
       baseStores
@@ -214,53 +192,37 @@ export default function CheckinPage() {
         .filter(Boolean),
     ),
   );
-
-  // 💡 สเต็ปที่ 3: กรองขั้นสุดท้ายแบบไดนามิกเพื่อนำไปแสดงผลที่แถบเลือกร้านค้าหลัก
-  const getDisplayedStores = () => {
-    return baseStores.filter((store) => {
-      const matchChanel = !selectedChanel || store.chanel === selectedChanel;
-      const matchAccount =
-        !selectedAccount || store.account === selectedAccount;
-      return matchChanel && matchAccount;
-    });
-  };
-
-  const displayedStores = getDisplayedStores();
+  const displayedStores = baseStores.filter(
+    (store) =>
+      (!selectedChanel || store.chanel === selectedChanel) &&
+      (!selectedAccount || store.account === selectedAccount),
+  );
 
   const handleSubmitCallVisit = async () => {
-    if (!selectedStore) {
-      Swal.fire({
-        icon: "warning",
-        title: "กรุณาเลือกร้านค้า",
-        text: "โปรดเลือกโมเดิร์นเทรดหน้าร้านก่อนทำการบันทึกครับ",
-        confirmButtonColor: "#1e3a8a",
-      });
-      return;
-    }
-    if (!isCheckIn && !isCheckOut) {
-      Swal.fire({
-        icon: "warning",
-        title: "กรุณาระบุสถานะเข้างาน",
-        text: "โปรดเลือก Check-in เข้างาน หรือ Check-out ออกงาน อย่างใดอย่างหนึ่งครับ",
-        confirmButtonColor: "#1e3a8a",
-      });
-      return;
-    }
-    if (!isGpsReady || deviceLat === null || deviceLng === null) {
-      Swal.fire({
+    if (!selectedStore)
+      return Swal.fire({ icon: "warning", title: "กรุณาเลือกร้านค้า" });
+    if (!isCheckIn && !isCheckOut)
+      return Swal.fire({ icon: "warning", title: "ระบุสถานะงาน" });
+    if (!isGpsReady)
+      return Swal.fire({
         icon: "error",
-        title: "ระบบยังไม่มีพิกัด GPS",
-        text: "โปรดรอให้ระบบจับตำแหน่งตัวเครื่องจริงสำเร็จก่อนบันทึกครับ",
-        confirmButtonColor: "#1e3a8a",
+        title: "ยังไม่ได้พิกัด GPS",
+        text: "โปรดรอให้ระบบจับตำแหน่งสำเร็จก่อนครับ",
       });
-      return;
-    }
+    if (!imageFile)
+      return Swal.fire({
+        icon: "warning",
+        title: "กรุณาถ่ายรูป",
+        text: "ต้องแนบรูปถ่ายการปฏิบัติงานครับ",
+      });
 
     try {
       setIsSubmitting(true);
+      const publicUrl = await uploadImageToStorage(imageFile);
+      if (!publicUrl) throw new Error("ไม่สามารถอัปโหลดรูปภาพได้");
+
       const currentStore = stores.find((s) => s.id === parseInt(selectedStore));
-      if (!currentStore)
-        throw new Error("ไม่พบข้อมูลโครงสร้างร้านค้าที่เลือกในระบบ");
+      if (!currentStore) throw new Error("ไม่พบข้อมูลร้านค้า");
 
       const { error } = await supabase.from("attendance_logs").insert([
         {
@@ -270,21 +232,11 @@ export default function CheckinPage() {
           type: isCheckIn ? "check-in" : "check-out",
           latitude: deviceLat,
           longitude: deviceLng,
-          image_url: imagePreview,
+          image_url: publicUrl,
           store_id: currentStore.id,
-          store_area: currentStore.area,
-          store_chanel: currentStore.chanel,
-          store_account: currentStore.account,
-          store_province: currentStore.province,
-          store_region: currentStore.region,
-          store_code: currentStore.store_code,
-          store_img: currentStore.store_img,
-          store_type: currentStore.store_type,
-          store_address: currentStore.address,
-          store_phone: currentStore.phone,
-          store_lat: currentStore.lat,
-          store_lng: currentStore.lng,
           store_name: currentStore.store_name,
+          store_code: currentStore.store_code,
+          store_area: currentStore.area,
           created_at: new Date().toISOString(),
         },
       ]);
@@ -294,43 +246,29 @@ export default function CheckinPage() {
       Swal.fire({
         icon: "success",
         title: "บันทึกข้อมูลสำเร็จ",
-        text: "ระบบได้ทำการบันทึกประวัติการปฏิบัติงานเรียบร้อยแล้ว",
-        confirmButtonColor: "#1e3a8a",
         timer: 2000,
         showConfirmButton: false,
       }).then(() => {
         setSelectedStore("");
-        setSelectedChanel("");
-        setSelectedAccount("");
         setIsCheckIn(false);
         setIsCheckOut(false);
         setImagePreview(null);
+        setImageFile(null);
         if (fileInputRef.current) fileInputRef.current.value = "";
-        fetchCurrentLocation();
       });
     } catch (err: any) {
-      console.error("Error saving visit:", err.message);
-      Swal.fire({
-        icon: "error",
-        title: "บันทึกไม่สำเร็จ",
-        text: `เกิดข้อผิดพลาด: ${err.message}`,
-        confirmButtonColor: "#1e3a8a",
-      });
+      Swal.fire({ icon: "error", title: "บันทึกไม่สำเร็จ", text: err.message });
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  const triggerCamera = () => {
-    fileInputRef.current?.click();
-  };
   const handleImageCapture = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
+      setImageFile(file);
       const reader = new FileReader();
-      reader.onloadend = () => {
-        setImagePreview(reader.result as string);
-      };
+      reader.onloadend = () => setImagePreview(reader.result as string);
       reader.readAsDataURL(file);
     }
   };
@@ -340,238 +278,131 @@ export default function CheckinPage() {
       <header className="bg-gradient-to-r from-[#1e3a8a] via-[#0f172a] to-[#1e293b] text-white shadow-lg border-b border-blue-900/40">
         <div className="max-w-4xl mx-auto px-4 py-4 flex flex-col sm:flex-row justify-between items-center gap-3">
           <div className="flex items-center space-x-3 text-center sm:text-left">
-            <div className="bg-white p-1.5 rounded-xl shadow-md flex items-center justify-center">
-              <img
-                src="/favicon.ico"
-                alt="Icon Logo"
-                className="h-10 w-auto object-contain"
-              />
+            <div className="bg-white p-1.5 rounded-xl shadow-md">
+              <img src="/favicon.ico" className="h-10 w-auto" />
             </div>
             <div>
-              <div className="flex flex-col sm:flex-row sm:items-center sm:gap-2">
-                <h1 className="text-lg font-bold tracking-wide">
-                  Riverpro Intertrade Co., Ltd
-                </h1>
-                <span className="hidden sm:inline opacity-40">|</span>
-                <span className="text-xs bg-blue-500/30 text-blue-300 px-2 py-0.5 rounded-full border border-blue-400/20 w-fit mx-auto sm:mx-0">
-                  Market Intelligence
-                </span>
-              </div>
-              <p className="text-xs text-slate-300 font-medium mt-0.5 opacity-90 tracking-wide">
-                {currentTime || "กำลังโหลดเวลาเซิร์ฟเวอร์..."}
-              </p>
+              <h1 className="text-lg font-bold">Check-in Portal</h1>
+              <p className="text-xs text-slate-300">{currentTime}</p>
             </div>
           </div>
-          <div className="flex items-center space-x-2">
-            <button
-              onClick={fetchCurrentLocation}
-              className="p-2 bg-white/10 hover:bg-white/20 active:scale-95 rounded-xl text-white transition-all border border-white/10 flex items-center justify-center"
-              title="ดึงพิกัดใหม่ด่วน"
-            >
-              <RotateCw className="w-4 h-4" />
-            </button>
-            <button
-              onClick={() => router.push("/")}
-              className="px-3 py-2 bg-white/10 hover:bg-white/20 active:scale-95 rounded-xl text-white text-xs font-bold transition-all border border-white/10 flex items-center space-x-1"
-            >
-              <Home className="w-3.5 h-3.5" />
-              <span>กลับหน้าหลัก</span>
-            </button>
-          </div>
+          <button
+            onClick={() => router.push("/")}
+            className="px-3 py-2 bg-white/10 rounded-xl text-xs font-bold flex items-center gap-1"
+          >
+            <Home className="w-3.5 h-3.5" /> กลับหน้าหลัก
+          </button>
         </div>
       </header>
 
-      <div className="bg-white border-b border-slate-100 py-3 mb-6 text-center">
-        <h2 className="text-sm font-bold text-slate-700 tracking-wide flex items-center justify-center gap-1.5">
-          <CheckCircle2 className="w-4 h-4 text-blue-600" /> บันทึก Call Visit
-          ปฏิบัติงานภาคสนาม
-        </h2>
-      </div>
-
-      <main className="max-w-xl mx-auto px-4 space-y-4">
-        <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4 flex justify-between items-center">
-          <div className="flex items-center space-x-3">
-            <div className="w-10 h-10 bg-slate-50 border border-slate-100 rounded-xl flex items-center justify-center text-slate-500">
-              <User className="w-5 h-5" />
-            </div>
-            <div>
-              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                ผู้รายงานตัวปฏิบัติงาน ({userCode})
-              </p>
-              <h3 className="text-base font-bold text-slate-800">
-                {displayName}
-              </h3>
-            </div>
+      <main className="max-w-xl mx-auto px-4 space-y-4 py-6">
+        <div className="bg-white rounded-2xl p-4 shadow-sm flex items-center space-x-3">
+          <div className="w-10 h-10 bg-slate-50 rounded-xl flex items-center justify-center text-slate-500">
+            <User className="w-5 h-5" />
           </div>
-          <span
-            className={`text-[10px] font-bold px-2.5 py-1 rounded-lg border ${companyTag.includes("ADMIN") ? "bg-red-50 text-red-600 border-red-100" : "bg-purple-50 text-purple-600 border-purple-100"}`}
-          >
-            {companyTag || "AUDITOR"}
-          </span>
+          <div>
+            <p className="text-[10px] font-bold text-slate-400 uppercase">
+              ผู้รายงานตัว ({userCode})
+            </p>
+            <h3 className="text-base font-bold text-slate-800">
+              {displayName}
+            </h3>
+          </div>
         </div>
 
-        <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4 space-y-3">
-          <div className="grid grid-cols-2 gap-3 border-b border-slate-100 pb-3">
-            <div className="space-y-1">
-              <label className="text-[11px] font-bold text-slate-500 flex items-center gap-1">
-                <Filter className="w-3 h-3 text-blue-500" /> ช่องทาง (Chanel)
-              </label>
-              <select
-                value={selectedChanel}
-                onChange={(e) => {
-                  setSelectedChanel(e.target.value);
-                  setSelectedAccount("");
-                  setSelectedStore("");
-                }}
-                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-2 text-xs font-semibold text-slate-700 focus:outline-none focus:border-blue-500 transition-all"
-              >
-                <option value="">-- ทั้งหมด ({uniqueChanels.length}) --</option>
-                {uniqueChanels.map((c) => (
-                  <option key={c} value={c}>
-                    {c}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="space-y-1">
-              <label className="text-[11px] font-bold text-slate-500 flex items-center gap-1">
-                <Filter className="w-3 h-3 text-blue-500" /> บัญชีร้านค้า
-                (Account)
-              </label>
-              <select
-                value={selectedAccount}
-                onChange={(e) => {
-                  setSelectedAccount(e.target.value);
-                  setSelectedStore("");
-                }}
-                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-2 text-xs font-semibold text-slate-700 focus:outline-none focus:border-blue-500 transition-all"
-              >
-                <option value="">
-                  -- ทั้งหมด ({uniqueAccounts.length}) --
-                </option>
-                {uniqueAccounts.map((a) => (
-                  <option key={a} value={a}>
-                    {a}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-
-          <div className="space-y-1.5">
-            <label className="text-xs font-bold text-slate-700 flex items-center space-x-1.5">
-              <Store className="w-4 h-4 text-blue-600" />
-              <span>เลือกร้านค้าปฏิบัติงาน (Call Visit)</span>
-            </label>
+        <div className="bg-white rounded-2xl p-4 shadow-sm space-y-3">
+          <div className="grid grid-cols-2 gap-3">
             <select
-              value={selectedStore}
-              onChange={(e) => setSelectedStore(e.target.value)}
-              disabled={isLoadingStores}
-              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-3 text-sm font-medium text-slate-700 focus:outline-none focus:border-blue-500 focus:bg-white transition-all disabled:opacity-60"
+              value={selectedChanel}
+              onChange={(e) => setSelectedChanel(e.target.value)}
+              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-2 text-xs font-semibold"
             >
-              {isLoadingStores ? (
-                <option>กำลังประมวลผลข้อมูลตามสิทธิ์พนักงาน...</option>
-              ) : displayedStores.length === 0 ? (
-                <option value="">
-                  ⚠️ ไม่พบรายชื่อร้านค้าตามตัวกรองที่ระบุ
+              <option value="">-- Chanel --</option>
+              {uniqueChanels.map((c) => (
+                <option key={c} value={c}>
+                  {c}
                 </option>
-              ) : (
-                <>
-                  <option value="">
-                    -- โปรดเลือกร้านค้า ({displayedStores.length} ร้านค้าย่อย)
-                    --
-                  </option>
-                  {displayedStores.map((store: StoreData) => (
-                    <option key={store.id} value={store.id}>
-                      {store.store_name} [{store.store_code}]
-                    </option>
-                  ))}
-                </>
-              )}
+              ))}
+            </select>
+            <select
+              value={selectedAccount}
+              onChange={(e) => setSelectedAccount(e.target.value)}
+              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-2 text-xs font-semibold"
+            >
+              <option value="">-- Account --</option>
+              {uniqueAccounts.map((a) => (
+                <option key={a} value={a}>
+                  {a}
+                </option>
+              ))}
             </select>
           </div>
+          <select
+            value={selectedStore}
+            onChange={(e) => setSelectedStore(e.target.value)}
+            className="w-full bg-slate-50 p-3 rounded-xl border border-slate-200 text-sm"
+          >
+            <option value="">เลือกร้านค้า ({displayedStores.length})</option>
+            {displayedStores.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.store_name} [{s.store_code}]
+              </option>
+            ))}
+          </select>
         </div>
 
         <div className="grid grid-cols-2 gap-3">
           <button
-            type="button"
             onClick={() => {
               setIsCheckIn(true);
               setIsCheckOut(false);
             }}
-            className={`p-4 rounded-2xl border flex flex-col items-center justify-center space-y-1.5 transition-all shadow-sm ${isCheckIn ? "bg-blue-50 border-blue-300 text-blue-600 ring-2 ring-blue-100" : "bg-white border-slate-100 text-slate-400 hover:bg-slate-50"}`}
+            className={`p-4 rounded-2xl border ${isCheckIn ? "bg-blue-50 border-blue-300 text-blue-600" : "bg-white"}`}
           >
-            <LogIn className="w-6 h-6" />
-            <span className="text-xs font-bold">Check-in เข้างาน</span>
+            <LogIn className="w-6 h-6 mx-auto" />{" "}
+            <span className="text-xs font-bold">Check-in</span>
           </button>
           <button
-            type="button"
             onClick={() => {
               setIsCheckOut(true);
               setIsCheckIn(false);
             }}
-            className={`p-4 rounded-2xl border flex flex-col items-center justify-center space-y-1.5 transition-all shadow-sm ${isCheckOut ? "bg-emerald-50 border-emerald-300 text-emerald-600 ring-2 ring-emerald-100" : "bg-white border-slate-100 text-slate-400 hover:bg-slate-50"}`}
+            className={`p-4 rounded-2xl border ${isCheckOut ? "bg-emerald-50 border-emerald-300 text-emerald-600" : "bg-white"}`}
           >
-            <LogOut className="w-6 h-6" />
-            <span className="text-xs font-bold">Check-out ออกงาน</span>
+            <LogOut className="w-6 h-6 mx-auto" />{" "}
+            <span className="text-xs font-bold">Check-out</span>
           </button>
         </div>
 
-        {/* 📸 บล็อกรูปภาพที่มีการปลดล็อก capture="environment" เรียบร้อยแล้ว */}
-        <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4 space-y-2">
-          <label className="text-xs font-bold text-slate-700 block">
-            รูปถ่ายยืนยันตัวตนและการเยี่ยมชม
-          </label>
+        <div className="bg-white rounded-2xl border border-slate-100 p-4">
           <input
             type="file"
             ref={fileInputRef}
             accept="image/*"
-            onChange={handleImageCapture} // 🎯 เอา capture="environment" ออกเพื่อให้ดึงเมนูระบบขึ้นมาเลือกได้
+            onChange={handleImageCapture}
             className="hidden"
           />
           <div
             onClick={triggerCamera}
-            className="border-2 border-dashed border-slate-200 hover:border-blue-400 bg-slate-50/50 rounded-xl p-4 transition-all flex flex-col items-center justify-center min-h-[160px] cursor-pointer group relative overflow-hidden"
+            className="border-2 border-dashed h-40 flex flex-col items-center justify-center cursor-pointer bg-slate-50/50 rounded-xl hover:border-blue-400"
           >
             {imagePreview ? (
-              <div className="w-full h-full min-h-[140px] relative flex items-center justify-center">
-                <img
-                  src={imagePreview}
-                  alt="Captured storefront"
-                  className="max-h-[180px] rounded-lg object-contain shadow-sm"
-                />
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setImagePreview(null);
-                    if (fileInputRef.current) fileInputRef.current.value = "";
-                  }}
-                  className="absolute top-2 right-2 p-2 bg-red-600 hover:bg-red-700 text-white rounded-full shadow-md transition-all active:scale-95"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </button>
-              </div>
+              <img src={imagePreview} className="h-full object-contain" />
             ) : (
               <>
-                <div className="w-10 h-10 bg-white shadow-sm border border-slate-100 rounded-full flex items-center justify-center text-blue-600 group-hover:scale-110 transition-all mb-2">
-                  <Camera className="w-5 h-5" />
-                </div>
-                <span className="text-xs font-bold text-slate-600">
-                  กดเพื่อถ่ายภาพใหม่ หรือเลือกรูปจากอัลบั้ม
-                </span>
-                <span className="text-[10px] text-slate-400 mt-1">
-                  ระบบรองรับทั้งการถ่ายสดและอัปโหลดรูปภาพหน้าร้านครับพี่
+                <Camera className="w-8 h-8 text-slate-400" />
+                <span className="text-xs font-bold text-slate-600 mt-2">
+                  ถ่ายภาพปฏิบัติงาน
                 </span>
               </>
             )}
           </div>
         </div>
 
+        {/* 🟢 บล็อกแสดง GPS สถานะ */}
         <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4 space-y-2">
           <label className="text-xs font-bold text-slate-700 block">
-            พิกัดสถานะความปลอดภัย (GPS ดาวเทียมสด)
+            สถานะ GPS
           </label>
           <div
             className={`rounded-xl p-3 flex items-start space-x-2.5 border ${isGpsReady ? "bg-emerald-50 border-emerald-100" : "bg-amber-50 border-amber-100"}`}
@@ -588,33 +419,33 @@ export default function CheckinPage() {
                 {gpsStatus}
               </p>
               {isGpsReady && (
-                <p className="text-[11px] font-medium text-emerald-600 tracking-wide mt-0.5">
-                  Lat: {deviceLat?.toFixed(6)}, Lng: {deviceLng?.toFixed(6)}
+                <p className="text-[10px] text-emerald-600">
+                  Lat: {deviceLat?.toFixed(5)}, Lng: {deviceLng?.toFixed(5)}
                 </p>
               )}
             </div>
           </div>
+          {!isGpsReady && (
+            <button
+              onClick={fetchCurrentLocation}
+              className="w-full text-[10px] bg-slate-100 py-1 rounded-lg font-bold text-slate-600"
+            >
+              ลองจับพิกัดใหม่
+            </button>
+          )}
         </div>
 
         <button
-          type="button"
           onClick={handleSubmitCallVisit}
           disabled={isSubmitting}
-          className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-bold py-3.5 rounded-2xl shadow-md active:scale-[0.99] transition-all text-sm tracking-wide mt-2 flex items-center justify-center space-x-2 disabled:opacity-75"
+          className="w-full bg-blue-600 text-white p-4 rounded-2xl font-bold"
         >
-          {isSubmitting ? (
-            <>
-              <Loader2 className="w-4 h-4 animate-spin" />
-              <span>กำลังบันทึกข้อมูล...</span>
-            </>
-          ) : (
-            <span>บันทึก Call Visit ปฏิบัติงาน</span>
-          )}
+          {isSubmitting ? "กำลังบันทึก..." : "บันทึกข้อมูล Call Visit"}
         </button>
       </main>
 
-      <footer className="bg-gradient-to-r from-[#f9fafc] via-[#d0daf3] to-[#cedef7] border-slate-100 py-5 text-center text-xs font-medium text-slate-400 tracking-wider">
-        &copy; 2026 RIVERPRO INTERTRADE CO., LTD. All rights reserved.
+      <footer className="py-5 text-center text-[10px] text-slate-400">
+        &copy; 2026 RIVERPRO INTERTRADE CO., LTD.
       </footer>
     </div>
   );

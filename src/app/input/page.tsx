@@ -47,6 +47,9 @@ interface OOSItem {
   priceTagImg: string;
   shelfImg: string;
   cmaImg: string;
+  priceTagFile?: File | null;
+  shelfFile?: File | null;
+  cmaFile?: File | null;
 }
 
 interface StoreCommentAlert {
@@ -110,6 +113,9 @@ export default function CompleteRightThemeInputPage() {
       priceTagImg: "",
       shelfImg: "",
       cmaImg: "",
+      priceTagFile: null,
+      shelfFile: null,
+      cmaFile: null,
     },
   ]);
 
@@ -374,6 +380,7 @@ export default function CompleteRightThemeInputPage() {
       baseList.map((s) => s.account).filter((a): a is string => !!a),
     );
     return Array.from(uniques).sort();
+    // 🟢 แก้ไข: ลบคำว่า text ออกจากตรงนี้ครับพี่
   }, [areaStoresList, selectedArea, selectedAuditor, selectedChannel]);
 
   const finalFilteredStores = useMemo(() => {
@@ -427,6 +434,9 @@ export default function CompleteRightThemeInputPage() {
         priceTagImg: "",
         shelfImg: "",
         cmaImg: "",
+        priceTagFile: null,
+        shelfFile: null,
+        cmaFile: null,
       },
     ]);
   };
@@ -436,7 +446,7 @@ export default function CompleteRightThemeInputPage() {
     setItems((prev) => prev.filter((item) => item.id !== id));
   };
 
-  const updateItemField = (id: number, field: keyof OOSItem, value: string) => {
+  const updateItemField = (id: number, field: keyof OOSItem, value: any) => {
     setItems((prev) =>
       prev.map((item) => (item.id === id ? { ...item, [field]: value } : item)),
     );
@@ -449,11 +459,42 @@ export default function CompleteRightThemeInputPage() {
   ) => {
     const file = e.target.files?.[0];
     if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        updateItemField(id, field, reader.result as string);
-      };
-      reader.readAsDataURL(file);
+      const previewUrl = URL.createObjectURL(file);
+      updateItemField(id, field, previewUrl);
+
+      const fileField =
+        field === "priceTagImg"
+          ? "priceTagFile"
+          : field === "shelfImg"
+            ? "shelfFile"
+            : "cmaFile";
+      updateItemField(id, fileField, file);
+    }
+  };
+
+  const uploadToSupabaseStorage = async (
+    file: File,
+    subFolder: string,
+  ): Promise<string | null> => {
+    try {
+      const fileExt = file.name.split(".").pop();
+      const uniqueFileName = `${subFolder}_${Date.now()}_${Math.random().toString(36).substring(2, 7)}.${fileExt}`;
+      const filePath = `${uniqueFileName}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from("oos-images")
+        .upload(filePath, file);
+
+      if (uploadError) throw uploadError;
+
+      const { data: urlData } = supabase.storage
+        .from("oos-images")
+        .getPublicUrl(filePath);
+
+      return urlData.publicUrl;
+    } catch (err) {
+      console.error("Storage upload failed:", err);
+      return null;
     }
   };
 
@@ -461,10 +502,30 @@ export default function CompleteRightThemeInputPage() {
     e.preventDefault();
     setLoading(true);
 
+    // [ด่านที่ 1] ตรวจจับสินค้าซ้ำภายในฟอร์มเดียวกัน
+    const validProducts = items
+      .filter((item) => item.oosReason !== "ไม่มีสินค้าที่ OOS" && item.product)
+      .map((item) => `${item.company}_${item.product}`);
+
+    const hasDuplicateInForm = validProducts.some(
+      (prod, idx) => validProducts.indexOf(prod) !== idx,
+    );
+
+    if (hasDuplicateInForm) {
+      Swal.fire({
+        icon: "error",
+        title: "กรอกข้อมูลสินค้าซ้ำซ้อน",
+        text: "⚠️ พี่นิวาสครับ พนักงานมีการกรอกสินค้าตัวเดียวกันซ้ำมาสองบรรทัดในฟอร์มนี้ รบกวนตรวจสอบอีกครั้งครับ!",
+        confirmButtonColor: "#d33",
+      });
+      setLoading(false);
+      return;
+    }
+
     const isImageMissing = items.some(
       (item) =>
         item.oosReason !== "ไม่มีสินค้าที่ OOS" &&
-        (!item.priceTagImg || !item.shelfImg),
+        (!item.priceTagFile || !item.shelfFile),
     );
 
     if (isImageMissing) {
@@ -479,7 +540,57 @@ export default function CompleteRightThemeInputPage() {
       return;
     }
 
+    Swal.fire({
+      title: "กำลังตรวจสอบและอัปโหลด...",
+      text: "🚀 ระบบกำลังตรวจสอบความซ้ำซ้อนของรายงานและอัปโหลดไฟล์รูปภาพหลักฐานถาวร...",
+      allowOutsideClick: false,
+      didOpen: () => {
+        Swal.showLoading();
+      },
+    });
+
     try {
+      // [ด่านที่ 2] ตรวจสอบสิทธิ์ห้ามส่งสินค้าซ้ำรายวันรายสาขา
+      if (validProducts.length > 0) {
+        const { data: existingVisits } = await supabase
+          .from("store_visits")
+          .select("id")
+          .eq("date_key", dateKey)
+          .eq("store_name", selectedStore);
+
+        if (existingVisits && existingVisits.length > 0) {
+          const visitIds = existingVisits.map((v) => v.id);
+
+          const { data: duplicateCheck } = await supabase
+            .from("oos_items")
+            .select("descriptions, company")
+            .in("visit_id", visitIds);
+
+          if (duplicateCheck && duplicateCheck.length > 0) {
+            for (const item of items) {
+              if (item.oosReason !== "ไม่มีสินค้าที่ OOS") {
+                const isAlreadySaved = duplicateCheck.some(
+                  (dbItem) =>
+                    dbItem.descriptions === item.product &&
+                    dbItem.company === item.company,
+                );
+
+                if (isAlreadySaved) {
+                  Swal.fire({
+                    icon: "error",
+                    title: "ระลึกประวัติซ้ำในระบบ",
+                    text: `❌ สินค้า [${item.product}] ของค่าย ${item.company} เคยถูกส่งข้อมูลขาดแคลนของร้านนี้ในวันนี้ไปแล้วครับพี่นิวาส!`,
+                    confirmButtonColor: "#d33",
+                  });
+                  setLoading(false);
+                  return;
+                }
+              }
+            }
+          }
+        }
+      }
+
       const matchedStoreData = areaStoresList.find(
         (s) => s.store_name === selectedStore,
       );
@@ -506,30 +617,54 @@ export default function CompleteRightThemeInputPage() {
       if (visitError) throw visitError;
       if (!visitData) throw new Error("ไม่สามารถสร้างชุดข้อมูลเยือนสาขาได้");
 
-      const itemsToSave = items.map((item) => {
+      const itemsToSave = [];
+
+      for (const item of items) {
         const masterRow = dbProducts.find(
           (p) => p.descriptions === item.product && p.company === item.company,
         );
 
-        const isNoOos =
-          item.oosReason === "none" || item.oosReason === "ไม่มีสินค้าที่ OOS";
+        const isNoOos = item.oosReason === "ไม่มีสินค้าที่ OOS";
 
-        return {
+        let finalPriceTagUrl = null;
+        let finalShelfUrl = null;
+        let finalCmaUrl = null;
+
+        if (!isNoOos) {
+          if (item.priceTagFile) {
+            finalPriceTagUrl = await uploadToSupabaseStorage(
+              item.priceTagFile,
+              "pricetag",
+            );
+          }
+          if (item.shelfFile) {
+            finalShelfUrl = await uploadToSupabaseStorage(
+              item.shelfFile,
+              "shelf",
+            );
+          }
+          if (item.cmaFile) {
+            finalCmaUrl = await uploadToSupabaseStorage(item.cmaFile, "cma");
+          }
+        }
+
+        // 🟢 [ปรับปรุง] ถ้าเป็นโหมดไม่มีสินค้าขาด ให้เก็บชื่อบริษัทที่หน้าร้านเลือกจริงแทนการ Fix ค่าเป็น RIVERPRO
+        itemsToSave.push({
           visit_id: visitData.id,
-          company: isNoOos ? "RIVERPRO" : item.company,
-          barcode: masterRow?.barcode || null,
+          company: item.company || "RIVERPRO",
+          barcode: isNoOos ? null : masterRow?.barcode || null,
           descriptions: isNoOos ? "ไม่มีสินค้าที่ OOS" : item.product,
           oos_reason: item.oosReason,
-          category: masterRow?.category || null,
-          brand: masterRow?.brand || null,
-          product_image_url: masterRow?.imageurl || null,
-          price_tag_image: item.priceTagImg || null,
-          shelf_image: item.shelfImg || null,
-          cma_image: item.cmaImg || null,
+          category: isNoOos ? null : masterRow?.category || null,
+          brand: isNoOos ? null : masterRow?.brand || null,
+          product_image_url: isNoOos ? null : masterRow?.imageurl || null,
+          price_tag_image: finalPriceTagUrl,
+          shelf_image: finalShelfUrl,
+          cma_image: finalCmaUrl,
           action_plan: item.actionPlan || null,
           expected_delivery_date: item.expectedDate || null,
-        };
-      });
+        });
+      }
 
       const { error: itemsError } = await (
         supabase.from("oos_items") as any
@@ -540,7 +675,7 @@ export default function CompleteRightThemeInputPage() {
       Swal.fire({
         icon: "success",
         title: "บันทึกข้อมูลเรียบร้อย!",
-        text: "🚀 บันทึกหัวข้อการเยี่ยมร้านและรายการสินค้าขาดสำเร็จกริบครับพี่!",
+        text: "🚀 บันทึกประวัติสถานะชั้นวางและค่ายสินค้าสำเร็จกริบครับพี่นิวาส!",
         confirmButtonColor: "#2563eb",
         confirmButtonText: "รับทราบ",
         timer: 3500,
@@ -559,6 +694,9 @@ export default function CompleteRightThemeInputPage() {
           priceTagImg: "",
           shelfImg: "",
           cmaImg: "",
+          priceTagFile: null,
+          shelfFile: null,
+          cmaFile: null,
         },
       ]);
       fetchPersonalKPI(selectedAuditor, dateKey);
@@ -566,7 +704,7 @@ export default function CompleteRightThemeInputPage() {
       console.error(err);
       Swal.fire(
         "เกิดข้อผิดพลาด",
-        "ไม่สามารถบันทึกข้อมูลสินค้า OOS ได้ในขณะนี้",
+        "ไม่สามารถเซฟประวัติชั้นวาง OOS ได้ในขณะนี้",
         "error",
       );
     } finally {
@@ -964,6 +1102,8 @@ export default function CompleteRightThemeInputPage() {
                     p.company === item.company,
                 );
 
+                const isNoOosMode = item.oosReason === "ไม่มีสินค้าที่ OOS";
+
                 return (
                   <div
                     key={item.id}
@@ -982,7 +1122,42 @@ export default function CompleteRightThemeInputPage() {
                       # ITEM {index + 1}
                     </div>
 
-                    <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-[9px] font-bold text-slate-500 mb-1 text-left">
+                        สถานะชั้นวาง / เหตุผล
+                      </label>
+                      <select
+                        value={item.oosReason}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          updateItemField(item.id, "oosReason", val);
+                          // รีเซ็ตเฉพาะหมวดหมู่ย่อยและตัวสินค้าหากไม่มีประวัติขาดแคลน
+                          if (val === "ไม่มีสินค้าที่ OOS") {
+                            updateItemField(item.id, "category", "");
+                            updateItemField(item.id, "product", "");
+                          }
+                        }}
+                        className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-bold outline-none bg-slate-50/50"
+                      >
+                        {[
+                          "ไม่มีสินค้าที่ OOS",
+                          "สินค้าขาดหน้าน้าน มีสต๊อก",
+                          "สินค้าขาด ไม่มีออเดอร์",
+                          "สินค้าขาด สต๊อกลม",
+                          "สินค้าขาด มีออเดอร์",
+                          "สินค้าขาดจากโรงงาน",
+                          "ไม่มีจำหน่ายในร้านค้า",
+                          "สินค้าติดบล็อค (Aging)",
+                        ].map((r) => (
+                          <option key={r} value={r}>
+                            {r}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* 🟢 🛠️ [ปรับปรุง] เปิดให้เลือก Company Type และ Company เสมอแม้สถานะเป็น "ไม่มีสินค้าที่ OOS" */}
+                    <div className="grid grid-cols-2 gap-2 animate-in fade-in duration-300">
                       <div>
                         <label className="block text-[8px] font-bold text-slate-500 mb-1 text-left">
                           ประเภทกลุ่มสินค้า (Company Type)
@@ -1035,64 +1210,41 @@ export default function CompleteRightThemeInputPage() {
                       </div>
                     </div>
 
-                    <div>
-                      <label className="block text-[9px] font-bold text-slate-500 mb-1 text-left">
-                        หมวดหมู่หลัก (Category)
-                      </label>
-                      <select
-                        disabled={!item.company}
-                        value={item.category}
-                        onChange={(e) => {
-                          updateItemField(item.id, "category", e.target.value);
-                          updateItemField(item.id, "product", "");
-                        }}
-                        className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-bold outline-none bg-white"
-                      >
-                        <option value="">-- เลือกหมวดหมู่หลัก --</option>
-                        {uniqueCategories.map((cat) => (
-                          <option key={cat ?? ""} value={cat ?? ""}>
-                            {cat}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
+                    {/* 🟢 🛠️ ซ่อน (Hide) ตัวเลือก Category, สินค้า และส่วนอัปโหลดรูปภาพ เฉพาะเมื่อเป็น "ไม่มีสินค้าที่ OOS" */}
+                    {!isNoOosMode && (
+                      <div className="space-y-4 pt-2 border-t border-dashed border-slate-200 animate-in fade-in duration-300">
+                        <div>
+                          <label className="block text-[9px] font-bold text-slate-500 mb-1 text-left">
+                            หมวดหมู่หลัก (Category)
+                          </label>
+                          <select
+                            disabled={!item.company}
+                            value={item.category}
+                            onChange={(e) => {
+                              updateItemField(
+                                item.id,
+                                "category",
+                                e.target.value,
+                              );
+                              updateItemField(item.id, "product", "");
+                            }}
+                            className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-bold outline-none bg-white"
+                          >
+                            <option value="">-- เลือกหมวดหมู่หลัก --</option>
+                            {uniqueCategories.map((cat) => (
+                              <option key={cat ?? ""} value={cat ?? ""}>
+                                {cat}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
 
-                    <div>
-                      <label className="block text-[9px] font-bold text-slate-500 mb-1 text-left">
-                        สถานะชั้นวาง / เหตุผล
-                      </label>
-                      <select
-                        value={item.oosReason}
-                        onChange={(e) =>
-                          updateItemField(item.id, "oosReason", e.target.value)
-                        }
-                        className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-bold outline-none bg-slate-50/50"
-                      >
-                        {[
-                          "ไม่มีสินค้าที่ OOS",
-                          "สินค้าขาดหน้าน้าน มีสต๊อก",
-                          "สินค้าขาด ไม่มีออเดอร์",
-                          "สินค้าขาด สต๊อกลม",
-                          "สินค้าขาด มีออเดอร์",
-                          "สินค้าขาดจากโรงงาน",
-                          "ไม่มีจำหน่ายในร้านค้า",
-                          "สินค้าติดบล็อค (Aging)",
-                        ].map((r) => (
-                          <option key={r} value={r}>
-                            {r}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-
-                    {item.oosReason !== "ไม่มีสินค้าที่ OOS" && (
-                      <div className="space-y-4 pt-2 border-t border-dashed border-slate-200">
                         <div>
                           <label className="block text-[9px] font-bold text-rose-700 mb-1 text-left">
                             เลือกตัวสินค้าที่ขาด (ตาม Category ที่คัดกรอง)
                           </label>
                           <select
-                            required
+                            required={!isNoOosMode}
                             disabled={!item.category}
                             value={item.product}
                             onChange={(e) =>
