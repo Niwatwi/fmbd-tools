@@ -124,7 +124,7 @@ export default function DashboardPage() {
           <div className="flex items-center gap-2 px-1">
             <div className="w-1.5 h-6 bg-gradient-to-b from-amber-400 to-orange-500 rounded-full"></div>
             <h2 className="text-sm font-black text-slate-900 uppercase tracking-wider">
-              งานสนามประจำวันหน้าร้าน
+              FBMD TOOLS
             </h2>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -137,7 +137,7 @@ export default function DashboardPage() {
                   <MapPin className="w-6 h-6" />
                 </div>
                 <h3 className="text-sm font-black text-slate-800">
-                  เช็คอินปฏิบัติงานหน้าร้าน
+                  Checkin - Checkout
                 </h3>
               </div>
             </div>
@@ -150,7 +150,7 @@ export default function DashboardPage() {
                   <Coins className="w-6 h-6" />
                 </div>
                 <h3 className="text-sm font-black text-slate-800">
-                  บันทึกข้อมูลสำรวจราคา
+                  Price and Off_take Check
                 </h3>
               </div>
             </div>
@@ -162,9 +162,7 @@ export default function DashboardPage() {
                 <div className="w-12 h-12 rounded-2xl bg-blue-500 text-white flex items-center justify-center">
                   <ClipboardList className="w-6 h-6" />
                 </div>
-                <h3 className="text-sm font-black text-slate-800">
-                  ประวัติสำรวจราคาย้อนหลัง
-                </h3>
+                <h3 className="text-sm font-black text-slate-800">OOS Check</h3>
               </div>
             </div>
           </div>
@@ -175,7 +173,7 @@ export default function DashboardPage() {
           <div className="flex items-center gap-2 px-1">
             <div className="w-1.5 h-6 bg-gradient-to-b from-purple-500 to-indigo-600 rounded-full"></div>
             <h2 className="text-sm font-black text-slate-900 uppercase tracking-wider">
-              ศูนย์วิเคราะห์และจัดการข้อมูล
+              Dashboard Analyze
             </h2>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -187,7 +185,7 @@ export default function DashboardPage() {
                 <BarChart3 className="w-6 h-6" />
               </div>
               <h3 className="text-sm font-black text-slate-800">
-                แผงวิเคราะห์รายงานราคา
+                Price Analyze
               </h3>
             </div>
             <div
@@ -198,7 +196,7 @@ export default function DashboardPage() {
                 <AlertTriangle className="w-6 h-6" />
               </div>
               <h3 className="text-sm font-black text-slate-800">
-                ระบบแจ้งเตือนสินค้าขาด
+                OOS Alert System
               </h3>
             </div>
 
@@ -213,20 +211,20 @@ export default function DashboardPage() {
                 </div>
                 <div className="space-y-1">
                   <h3 className="text-sm font-black text-slate-800 flex items-center gap-1.5">
-                    ศูนย์ตอบกลับคอมเมนต์ลูกค้า
+                    Customer Service Center
                     <span className="text-[9px] bg-emerald-500 text-white font-extrabold px-1.5 py-0.5 rounded-full animate-pulse">
                       LIVE
                     </span>
                   </h3>
                   <p className="text-xs text-slate-500 font-semibold leading-relaxed">
-                    ห้องไลฟ์แชตดักฟังคำถามและข้อร้องเรียนจากลูกค้าหน้าร้านสาขาแบบ
-                    Real-time
+                    A live chat room that listens to questions and complaints
+                    from store branch customers Real-time
                   </p>
                 </div>
               </div>
               <div className="pt-4 flex items-center justify-between border-t border-slate-50">
                 <span className="text-[10px] font-black text-blue-700 bg-blue-50 px-2.5 py-1 rounded-md">
-                  🚀 สถานะ: ACTIVE
+                  🚀 Status: ACTIVE
                 </span>
               </div>
             </div>
@@ -238,7 +236,7 @@ export default function DashboardPage() {
           <div className="flex items-center gap-2 px-1">
             <div className="w-1.5 h-6 bg-gradient-to-b from-blue-600 to-indigo-700 rounded-full"></div>
             <h2 className="text-sm font-black text-slate-900 uppercase tracking-wider">
-              ลงทะเบียนฐานข้อมูลกลาง
+              Registering Center
             </h2>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -250,7 +248,7 @@ export default function DashboardPage() {
                 <Store className="w-6 h-6" />
               </div>
               <h3 className="text-sm font-black text-slate-800">
-                ลงทะเบียนร้านค้า Master Store
+                Add Master Store
               </h3>
             </div>
             <div
@@ -261,7 +259,7 @@ export default function DashboardPage() {
                 <Package className="w-6 h-6" />
               </div>
               <h3 className="text-sm font-black text-slate-800">
-                ลงทะเบียนสินค้า Master Product
+                Add Master Product
               </h3>
             </div>
           </div>
