@@ -1,11 +1,12 @@
+/* eslint-disable @next/next/no-img-element */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { createClient } from "@supabase/supabase-js";
 import { Html5Qrcode } from "html5-qrcode";
 import Swal from "sweetalert2";
+import { supabase } from "@/lib/supabase"; // 🟢 ใช้ท่อกลางหลักที่ต่อกับแพลน PRO และ .env.local เรียบร้อย
 import {
   ArrowLeft,
   Barcode,
@@ -17,12 +18,6 @@ import {
   Loader2,
   Image as ImageIcon,
 } from "lucide-react";
-
-// 🏢 เชื่อมต่อ Supabase Client ของพี่นิวาส
-const _supabase = createClient(
-  "https://ryqabfpzjmtujfhslovm.supabase.co",
-  "sb_publishable_RhkCtuGUUeaG9ScGoyS1vw_zCCDumnl",
-);
 
 export default function AddPricePage() {
   const router = useRouter();
@@ -58,14 +53,14 @@ export default function AddPricePage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [currentTime, setCurrentTime] = useState("");
 
-  // 👤 🎯 สเตทสำหรับเก็บข้อมูล User ที่ล็อกอินเข้ามาโชว์บนแบนเนอร์
+  // สเตทสำหรับเก็บข้อมูล User ที่ล็อกอินเข้ามาโชว์บนแบนเนอร์
   const [loginName, setLoginName] = useState("");
   const [loginCode, setLoginCode] = useState("");
   const qrReaderRef = useRef<Html5Qrcode | null>(null);
   const fileInputTag = useRef<HTMLInputElement>(null);
   const fileInputShelf = useRef<HTMLInputElement>(null);
 
-  // 🕒 ระบบนาฬิกา Real-time อัปเดตทุกวินาทีใต้ชื่อบริษัท
+  // ระบบนาฬิกา Real-time อัปเดตทุกวินาทีใต้ชื่อบริษัท
   useEffect(() => {
     const updateClock = () => {
       const now = new Date();
@@ -82,11 +77,11 @@ export default function AddPricePage() {
     return () => clearInterval(interval);
   }, []);
 
-  // 🔄 1. โหลดข้อมูลร้านค้าเมื่อเข้าหน้าจอ + ดึง Session ผู้ใช้งาน
+  // 1. โหลดข้อมูลร้านค้าเมื่อเข้าหน้าจอ + ดึง Session ผู้ใช้งาน
   useEffect(() => {
     async function loadStores() {
       try {
-        const { data, error } = await _supabase
+        const { data, error } = await supabase
           .from("stores")
           .select("*")
           .order("store_name", { ascending: true });
@@ -102,7 +97,6 @@ export default function AddPricePage() {
     }
     loadStores();
 
-    // 🎯 ดักจับข้อมูลผู้ใช้งานจริงจากระบบ LocalStorage ของบราวเซอร์มาใส่สเตท
     const storedName = localStorage.getItem("userName");
     const storedCode = localStorage.getItem("userCode");
     if (!storedName) {
@@ -113,7 +107,7 @@ export default function AddPricePage() {
     }
   }, [router]);
 
-  // 🎛️ 2. ระบบ Cascading Filter เลือกสาขา
+  // 2. ระบบ Cascading Filter เลือกสาขา
   useEffect(() => {
     if (!selectedArea) {
       setAccounts([]);
@@ -174,7 +168,7 @@ export default function AddPricePage() {
     }
   }, [selectedStoreName, selectedAccount, selectedArea, globalStores]);
 
-  // 📷 3. ระบบกล้องสแกนบาร์โค้ด
+  // 3. ระบบกล้องสแกนบาร์โค้ด
   const toggleScanner = async () => {
     if (isScanning) {
       if (qrReaderRef.current) {
@@ -211,7 +205,7 @@ export default function AddPricePage() {
     }
   };
 
-  // 🔍 4. ค้นหาสินค้าจากบาร์โค้ด
+  // 4. ค้นหาสินค้าจากบาร์โค้ด
   const handleSearchProduct = async (targetBarcode = barcodeInput) => {
     if (!targetBarcode.trim()) {
       Swal.fire("แจ้งเตือน", "กรุณากรอกหรือสแกนบาร์โค้ดก่อนครับ", "warning");
@@ -220,7 +214,7 @@ export default function AddPricePage() {
     uiLoadingStart();
 
     try {
-      const { data, error } = await _supabase
+      const { data, error } = await supabase
         .from("products")
         .select("*")
         .eq("barcode", targetBarcode.trim());
@@ -253,7 +247,7 @@ export default function AddPricePage() {
     });
   };
 
-  // 🛒 5. เพิ่มรายการลงตะกร้า
+  // 5. เพิ่มรายการลงตะกร้า
   const handleAddToCart = () => {
     if (!detectedProduct) {
       Swal.fire(
@@ -308,7 +302,7 @@ export default function AddPricePage() {
     setShelfViewPreview("");
   };
 
-  // 🚀 6. บันทึกทุกรายการและยิงไลน์แบบสับราง (เวอร์ชันอัปเกรดพิกัด + ผูก ID ลูกค้าคำนวณ KPI)
+  // 6. บันทึกทุกรายการและยิงไลน์แบบสับราง
   const handleSaveAllSurveys = async () => {
     if (surveyCart.length === 0) return;
     setIsSubmitting(true);
@@ -325,7 +319,7 @@ export default function AddPricePage() {
       const surveyorName = localStorage.getItem("userName") || "Unknown";
       const merCode = localStorage.getItem("userCode") || "Unknown";
 
-      // 🛰️ 1. ดึงพิกัดสดๆ จากดาวเทียมบนหน้าเครื่องพนักงานผ่านเบราว์เซอร์ (High Accuracy)
+      // 🛰️ ดึงพิกัดสดๆ จากดาวเทียมบนหน้าเครื่องพนักงานผ่านเบราว์เซอร์
       let currentLat: number | null = null;
       let currentLng: number | null = null;
       let gpsAccuracy: number | null = null;
@@ -334,7 +328,7 @@ export default function AddPricePage() {
         const position = await new Promise<GeolocationPosition>(
           (resolve, reject) => {
             navigator.geolocation.getCurrentPosition(resolve, reject, {
-              enableHighAccuracy: true, // บังคับเปิด GPS แท้ ไม่ใช้เสามือถือ
+              enableHighAccuracy: true,
               timeout: 8000,
               maximumAge: 0,
             });
@@ -342,23 +336,22 @@ export default function AddPricePage() {
         );
         currentLat = position.coords.latitude;
         currentLng = position.coords.longitude;
-        gpsAccuracy = position.coords.accuracy; // รัศมีความคลาดเคลื่อน (เมตร)
+        gpsAccuracy = position.coords.accuracy;
       } catch (gpsErr) {
         console.warn(
           "⚠️ สัญญาณ GPS ขัดข้อง หรือพนักงานไม่ได้เปิดสิทธิ์:",
           gpsErr,
         );
-        // ถ้าระบบ GPS หลุด ให้ใช้ค่าจากสเต็ปเช็คอินในแอปสสำรอง (ถ้ามี)
         currentLat = localStorage.getItem("hidden_lat")
           ? parseFloat(localStorage.getItem("hidden_lat")!)
           : null;
         currentLng = localStorage.getItem("hidden_lng")
           ? parseFloat(localStorage.getItem("hidden_lng")!)
           : null;
-        gpsAccuracy = 999; // กำหนดค่า Error พิเศษไว้ตรวจสอบ KPI
+        gpsAccuracy = 999;
       }
 
-      // 📏 2. ฟังก์ชันคำนวณระยะห่างระหว่างพนักงานกับสาขา (หน่วยเป็นเมตร)
+      // 📏 คำนวณระยะห่างระหว่างพนักงานกับสาขา (เมตร)
       let distanceMeters = null;
       if (
         currentLat &&
@@ -367,7 +360,7 @@ export default function AddPricePage() {
         currentStore.lat &&
         currentStore.lng
       ) {
-        const R = 6371e3; // รัศมีโลกเฉลี่ย (เมตร)
+        const R = 6371e3;
         const dLat = ((currentStore.lat - currentLat) * Math.PI) / 180;
         const dLon = ((currentStore.lng - currentLng) * Math.PI) / 180;
         const a =
@@ -377,7 +370,7 @@ export default function AddPricePage() {
             Math.sin(dLon / 2) *
             Math.sin(dLon / 2);
         const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-        distanceMeters = Math.round(R * c); // ได้ระยะห่างเป็นเมตรตรงๆ แม่นยำสูง
+        distanceMeters = Math.round(R * c);
       }
 
       const uploadedItemsForLine: any[] = [];
@@ -390,7 +383,7 @@ export default function AddPricePage() {
         if (item.priceTagFile) {
           const fileExt = item.priceTagFile.name.split(".").pop();
           const fileName = `${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
-          const { error: uploadError } = await _supabase.storage
+          const { error: uploadError } = await supabase.storage
             .from("surveys")
             .upload(`price_tags/${fileName}`, item.priceTagFile);
           if (uploadError)
@@ -398,7 +391,7 @@ export default function AddPricePage() {
               "รูปป้ายราคาอัปโหลดล้มเหลว: " + uploadError.message,
             );
 
-          const { data: urlData } = _supabase.storage
+          const { data: urlData } = supabase.storage
             .from("surveys")
             .getPublicUrl(`price_tags/${fileName}`);
           price_tag_url = urlData.publicUrl;
@@ -408,19 +401,19 @@ export default function AddPricePage() {
         if (item.shelfViewFile) {
           const fileExt = item.shelfViewFile.name.split(".").pop();
           const fileName = `${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
-          const { error: uploadError } = await _supabase.storage
+          const { error: uploadError } = await supabase.storage
             .from("surveys")
             .upload(`shelf_views/${fileName}`, item.shelfViewFile);
           if (uploadError)
             throw new Error("รูปชั้นวางอัปโหลดล้มเหลว: " + uploadError.message);
 
-          const { data: urlData } = _supabase.storage
+          const { data: urlData } = supabase.storage
             .from("surveys")
             .getPublicUrl(`shelf_views/${fileName}`);
           shelf_view_url = urlData.publicUrl;
         }
 
-        // 🔍 3. สืบหาข้อมูล customer_id เพื่อเอามาผูกความสัมพันธ์ตาราง (แก้ปัญหาสินค้าไม่มี ID ติดมา)
+        // สืบหาข้อมูล customer_id เพื่อเอามาผูกความสัมพันธ์ตาราง
         let resolvedCustomerId = item.customer_id;
         if (!resolvedCustomerId && item.company) {
           let searchCompanyName = item.company;
@@ -431,8 +424,7 @@ export default function AddPricePage() {
           ) {
             searchCompanyName = "RVP";
           }
-          // วิ่งไปเคาะตารางลูกค้าดึง ID มาแมตช์ให้แบบสดๆ
-          const { data: custRow } = await _supabase
+          const { data: custRow } = await supabase
             .from("customers")
             .select("id")
             .eq("name", searchCompanyName)
@@ -443,7 +435,7 @@ export default function AddPricePage() {
           }
         }
 
-        // 📝 ประกอบโครงสร้างข้อมูลเตรียมยิงจมลงตาราง price_surveys แบบครบถ้วนทุกช่อง
+        // ประกอบโครงสร้างข้อมูลเตรียมยิงจมลงตาราง price_surveys แบบครบถ้วนทุกช่อง
         const record = {
           area: selectedArea,
           chanel: chanel,
@@ -471,7 +463,6 @@ export default function AddPricePage() {
           shelf_view_url: shelf_view_url || null,
           surveyor_name: surveyorName,
           mer_code: merCode,
-          // 🎯 ข้อมูลทองคำสำหรับคำนวณ KPI ถูกป้อนเข้าตารางตรงนี้แล้วครับพี่นิวาส!
           lat: currentLat,
           lng: currentLng,
           gps_accuracy: gpsAccuracy,
@@ -480,14 +471,13 @@ export default function AddPricePage() {
           customer_id: resolvedCustomerId,
         };
 
-        const { error } = await _supabase
-          .from("price_surveys")
-          .insert([record]);
+        const { error } = await supabase.from("price_surveys").insert([record]);
         if (error)
           throw new Error(
             `บาร์โค้ด ${item.barcode} บันทึกไม่สำเร็จ: ${error.message}`,
           );
 
+        // 🟢 การันตีการส่งคีย์และตัวแปร URL แนบเข้าไลน์อย่างครบถ้วน (ป้องกันปุ่มกดดูรูปหาย)
         uploadedItemsForLine.push({
           barcode: item.barcode,
           descriptions: item.descriptions,
@@ -498,8 +488,8 @@ export default function AddPricePage() {
           company: item.company,
           company_type: item.company_type,
           category: item.category,
-          price_tag_url: price_tag_url || null,
-          shelf_view_url: shelf_view_url || null,
+          price_tag_url: price_tag_url || null, // URL สดๆ จากถังคลาวด์สำหรับปุ่ม "📸 รูปป้าย"
+          shelf_view_url: shelf_view_url || null, // URL สดๆ จากถังคลาวด์สำหรับปุ่ม "📦 รูปชั้น"
           imageurl: item.imageurl || null,
         });
       }
@@ -989,7 +979,7 @@ export default function AddPricePage() {
         )}
       </main>
 
-      {/* 📊 FOOTER MODULE: PREMIUM IDENTITY */}
+      {/* FOOTER MODULE: PREMIUM IDENTITY */}
       <footer className="max-w-3xl mx-auto px-4 mt-16 text-center space-y-2">
         <div className="bg-gradient-to-r from-transparent via-slate-300 to-transparent h-[1px] w-full"></div>
         <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest pt-4">

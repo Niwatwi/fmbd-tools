@@ -234,11 +234,25 @@ export default function CheckinPage() {
           latitude: deviceLat,
           longitude: deviceLng,
           image_url: publicUrl,
+          created_at: new Date().toISOString(),
+
+          // 🟢 ของเดิมที่มีอยู่แล้ว
           store_id: currentStore.id,
           store_name: currentStore.store_name,
           store_code: currentStore.store_code,
           store_area: currentStore.area,
-          created_at: new Date().toISOString(),
+
+          // 🟢 เติมท่อส่งข้อมูลร้านค้าส่วนที่เหลือเข้าไปให้ครบถ้วนครับพี่นิวาส
+          store_chanel: currentStore.chanel,
+          store_account: currentStore.account,
+          store_province: currentStore.province,
+          store_region: currentStore.region,
+          store_img: currentStore.store_img,
+          store_type: currentStore.store_type,
+          store_address: currentStore.address,
+          store_phone: currentStore.phone,
+          store_lat: currentStore.lat,
+          store_lng: currentStore.lng,
         },
       ]);
 

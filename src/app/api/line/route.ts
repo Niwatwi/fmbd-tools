@@ -52,7 +52,7 @@ export async function POST(request: Request) {
     }
 
     const finalLineToken = customerData.line_token.trim();
-    const chunkSize = 3;
+    const chunkSize = 6;
     const itemChunks = [];
     for (let i = 0; i < items.length; i += chunkSize) {
       itemChunks.push(items.slice(i, i + chunkSize));
