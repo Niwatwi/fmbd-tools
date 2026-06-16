@@ -12,6 +12,7 @@ import {
   Mail,
   Phone,
   MessageSquare,
+  MapPin, // 🟢 เพิ่ม MapPin สำหรับไอคอนแจ้งเตือน
 } from "lucide-react";
 
 export default function LoginPage() {
@@ -19,6 +20,9 @@ export default function LoginPage() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // 🟢 สเตทสำหรับควบคุมการแสดงหน้าต่างแจ้งเตือน iOS LINE
+  const [showIosLineWarning, setShowIosLineWarning] = useState(false);
 
   useEffect(() => {
     // 💡 ปรับให้เรียก Favicon จาก root public โดยตรง (แก้ปัญหา 404 ใน Console)
@@ -30,6 +34,15 @@ export default function LoginPage() {
     link.href = "/favicon.ico";
     document.getElementsByTagName("head")[0].appendChild(link);
     document.title = "เข้าสู่ระบบ | RVP Market Intelligence";
+
+    // 🍏 ตรวจจับ User Agent ว่าเป็น LINE บน iOS หรือไม่ ตั้งแต่หน้าแรก
+    const ua = navigator.userAgent.toLowerCase();
+    const isLine = ua.includes("line");
+    const isIOS = /iphone|ipad|ipod/.test(ua);
+
+    if (isLine && isIOS) {
+      setShowIosLineWarning(true);
+    }
   }, []);
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -88,7 +101,7 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen bg-[#f1f5f9] flex flex-col items-center justify-center p-4 font-sans">
+    <div className="min-h-screen bg-[#f1f5f9] flex flex-col items-center justify-center p-4 font-sans relative">
       <div className="w-full max-w-md bg-gradient-to-br from-blue-900 to-white text-white rounded-3xl shadow-xl border-4 border-red-200 p-1 space-y-6 relative overflow-hidden">
         <div className="text-center space-y-2">
           {/* 💡 ปรับพิกัด Link โลโก้ให้ชี้หา /rvp.png นอกสุดตามที่ Copy สแตนด์บายไว้เรียบร้อยแล้ว */}
@@ -205,6 +218,67 @@ export default function LoginPage() {
           © 2026 Riverpro Intertrade Co., Ltd. All rights reserved.
         </p>
       </div>
+
+      {/* 🍏 หน้าต่างแจ้งเตือนสำหรับพนักงานที่ใช้ iPhone บนแอป LINE */}
+      {showIosLineWarning && (
+        <div className="fixed inset-0 bg-slate-900/95 backdrop-blur-md z-[9999] flex flex-col items-center justify-center p-6 text-white text-center animate-fadeIn">
+          {/* ลูกศรชี้มุมขวาบนแอป LINE */}
+          <div className="absolute top-4 right-4 animate-bounce text-right">
+            <p className="text-sm font-black text-amber-400">กดตรงนี้ครับ ↗</p>
+            <p className="text-xs text-slate-300">จุดสามจุดมุมขวาบน</p>
+          </div>
+
+          <div className="max-w-sm space-y-5 mt-12">
+            <div className="w-16 h-16 bg-amber-500 rounded-2xl flex items-center justify-center mx-auto shadow-[0_0_20px_rgba(245,158,11,0.4)]">
+              <MapPin className="w-8 h-8 text-white animate-pulse" />
+            </div>
+
+            <div className="space-y-2">
+              <h3 className="text-lg font-black text-amber-400">
+                ระบบเปิดผ่าน LINE Browser (iOS)
+              </h3>
+              <p className="text-xs text-slate-300 leading-relaxed px-4">
+                เพื่อความเสถียรในการทำงานและระบบดาวเทียม GPS โปรดย้ายไปเปิดบน
+                Safari ก่อนเข้าสู่ระบบครับ
+              </p>
+            </div>
+
+            <div className="bg-white/10 border border-white/10 rounded-2xl p-4 text-left space-y-3">
+              <p className="text-xs font-bold text-amber-300 flex items-center gap-1.5">
+                💡 วิธีการย้ายเบราว์เซอร์:
+              </p>
+              <ol className="text-xs text-slate-200 space-y-2 list-decimal list-inside font-semibold">
+                <li>
+                  มองไปที่{" "}
+                  <span className="text-amber-400 font-bold">มุมขวาบนสุด</span>{" "}
+                  ของหน้าจอมือถือ
+                </li>
+                <li>
+                  กดปุ่ม{" "}
+                  <span className="bg-white/20 px-1.5 py-0.5 rounded font-black">
+                    ⋮
+                  </span>{" "}
+                  หรือ{" "}
+                  <span className="bg-white/20 px-1.5 py-0.5 rounded font-black">
+                    ...
+                  </span>
+                </li>
+                <li>
+                  เลือกคำสั่ง{" "}
+                  <span className="text-emerald-400 font-bold">
+                    "เปิดใน Safari" (Open in Safari)
+                  </span>
+                </li>
+              </ol>
+            </div>
+
+            <p className="text-[11px] text-slate-400 font-medium pt-4">
+              เมื่อย้ายไป Safari แล้ว หน้าต่างนี้จะหายไปและสามารถใช้งานได้ 100%
+              ครับ
+            </p>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

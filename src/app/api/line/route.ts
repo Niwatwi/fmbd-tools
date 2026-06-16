@@ -1,191 +1,228 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
-import axios from "axios";
 
-const _supabaseBackend = createClient(
-  "https://ryqabfpzjmtujfhslovm.supabase.co",
-  "sb_publishable_RhkCtuGUUeaG9ScGoyS1vw_zCCDumnl",
-);
-
-export async function POST(request: Request) {
+export async function POST(req: Request) {
   try {
-    const body = await request.json();
+    const body = await req.json();
     const { store_name, surveyor_name, items } = body;
 
-    if (!items || items.length === 0) {
-      return NextResponse.json({ error: "ไม่พบรายการสินค้า" }, { status: 400 });
-    }
+    // 1. วนลูปเพื่อแมปรายการสินค้าให้แสดงผลทีละ SKU ในรูปแบบ Flex Box
+    const skuContents = items.flatMap((item: any, index: number) => {
+      // ตรวจสอบราคาแสดงผล (หากมีราคาโปรโมชั่นให้ใส่เครื่องหมายกำกับ)
+      const hasPromo = item.promo_price && parseFloat(item.promo_price) > 0;
+      const finalPriceText = hasPromo
+        ? `${item.promo_price} ฿ (โปรฯ)`
+        : `${item.price} ฿`;
 
-    const firstItem = items[0];
-    let targetCustomerGroup = "";
-
-    if (firstItem.company_type === "Company") {
-      targetCustomerGroup = firstItem.company;
-    } else {
-      const { data: ourProduct } = await _supabaseBackend
-        .from("products")
-        .select("company")
-        .eq("category", firstItem.category)
-        .eq("company_type", "Company")
-        .limit(1);
-      targetCustomerGroup = ourProduct?.[0]?.company || "RVP";
-    }
-
-    const normalizedGroup = targetCustomerGroup.toLowerCase().trim();
-    if (["riverpro", "rvp"].includes(normalizedGroup))
-      targetCustomerGroup = "RVP";
-
-    const { data: customerData, error: customerError } = await _supabaseBackend
-      .from("customers")
-      .select("line_token")
-      .or(
-        `name.eq.${targetCustomerGroup},company_name.eq.${targetCustomerGroup}`,
-      )
-      .maybeSingle();
-
-    if (customerError || !customerData?.line_token) {
-      return NextResponse.json(
-        { error: `ไม่พบ Token ของ ${targetCustomerGroup}` },
-        { status: 404 },
-      );
-    }
-
-    const finalLineToken = customerData.line_token.trim();
-    const chunkSize = 6;
-    const itemChunks = [];
-    for (let i = 0; i < items.length; i += chunkSize) {
-      itemChunks.push(items.slice(i, i + chunkSize));
-    }
-
-    const carouselBubbles = itemChunks.map((chunk, chunkIdx) => {
-      const flexContents: any[] = [];
-
-      if (chunkIdx === 0) {
-        flexContents.push(
-          {
-            type: "text",
-            text: store_name || "ไม่ระบุชื่อร้านค้า",
-            weight: "bold",
-            size: "md",
-            color: "#111111",
-            wrap: true,
-          },
-          {
-            type: "text",
-            text: `👤 ผู้ส่ง: ${surveyor_name || "ไม่ระบุ"}`,
-            size: "xxs",
-            color: "#555555",
-            margin: "sm",
-          },
-          {
-            type: "text",
-            text: `📦 (${items.length} SKUs)`,
-            size: "xxs",
-            color: "#777777",
-            weight: "bold",
-          },
-          { type: "separator", margin: "md" },
-        );
-      } else {
-        flexContents.push(
-          {
-            type: "text",
-            text: `${store_name} (ต่อ)`,
-            weight: "bold",
-            size: "sm",
-            color: "#555555",
-          },
-          { type: "separator", margin: "md" },
-        );
-      }
-
-      chunk.forEach((item: any, index: number) => {
-        const globalIndex = chunkIdx * chunkSize + index + 1;
-        const displayPrice =
-          item.promo_price && item.promo_price !== "0"
-            ? `${item.price} ฿ -> ${item.promo_price} ฿`
-            : `${item.price} ฿`;
-
-        flexContents.push({
+      return [
+        // บรรทัดที่ 1: ชื่อสินค้า และ ราคาขาย
+        {
           type: "box",
-          layout: "vertical",
+          layout: "horizontal",
           margin: "md",
           contents: [
             {
+              type: "text",
+              text: `${index + 1}. ${item.pack_name || item.descriptions || "ไม่ระบุชื่อสินค้า"}`,
+              weight: "bold",
+              size: "sm",
+              color: "#111111",
+              flex: 4,
+              wrap: true,
+            },
+            {
+              type: "text",
+              text: finalPriceText,
+              weight: "bold",
+              size: "sm",
+              color: hasPromo ? "#DC3545" : "#0066C8",
+              align: "end",
+              flex: 2,
+            },
+          ],
+        },
+        // บรรทัดที่ 2: รหัสบาร์โค้ด, ค่า Off-Take และ ปุ่มกดลิงก์ดูรูปภาพหน้างาน
+        {
+          type: "box",
+          layout: "horizontal",
+          margin: "xs",
+          contents: [
+            // ฝั่งซ้าย: ข้อมูลสินค้าเชิงลึก
+            {
               type: "box",
-              layout: "horizontal",
+              layout: "vertical",
+              flex: 4,
               contents: [
                 {
                   type: "text",
-                  text: `${globalIndex}. ${item.descriptions}`,
-                  size: "sm",
-                  color: "#222222",
-                  flex: 4,
-                  wrap: true,
+                  text: `บาร์โค้ด: ${item.barcode || "-"}`,
+                  size: "xs",
+                  color: "#888888",
                 },
                 {
                   type: "text",
-                  text: displayPrice,
-                  size: "sm",
-                  color: "#005bb7",
-                  flex: 2,
-                  align: "end",
+                  text: `📈 Off-Take: ${item.off_take || 0}`,
+                  size: "xs",
+                  color: "#28A745",
+                  weight: "bold",
                 },
               ],
             },
+            // ฝั่งขวา: กลุ่มปุ่มกดเปิดดูรูปถ่ายแบบ Inline Text Action
+            {
+              type: "box",
+              layout: "horizontal",
+              flex: 3,
+              spacing: "md",
+              justifyContent: "flex-end",
+              alignItems: "center",
+              contents: [
+                // ปุ่มดูรูปภาพป้ายราคา (จะแสดงขึ้นมาเมื่อพนักงานมีการถ่ายรูปส่งเข้ามาเท่านั้น)
+                ...(item.price_tag_url
+                  ? [
+                      {
+                        type: "text",
+                        text: "🖼️ รูปป้าย",
+                        size: "xs",
+                        color: "#0066C8",
+                        align: "end",
+                        weight: "bold",
+                        decoration: "underline",
+                        action: {
+                          type: "uri",
+                          label: "ดูรูปป้าย",
+                          uri: item.price_tag_url,
+                        },
+                      },
+                    ]
+                  : []),
+                // ปุ่มดูรูปถ่ายหน้าชั้นวางสินค้า (จะแสดงขึ้นมาเมื่อพนักงานมีการถ่ายรูปส่งเข้ามาเท่านั้น)
+                ...(item.shelf_view_url
+                  ? [
+                      {
+                        type: "text",
+                        text: "📸 รูปชั้น",
+                        size: "xs",
+                        color: "#0066C8",
+                        align: "end",
+                        weight: "bold",
+                        decoration: "underline",
+                        action: {
+                          type: "uri",
+                          label: "ดูรูปชั้น",
+                          uri: item.shelf_view_url,
+                        },
+                      },
+                    ]
+                  : []),
+              ],
+            },
           ],
-        });
-      });
+        },
+        // เส้นแบ่งบางๆ ระหว่างรายการสินค้าสไตล์มินิมอล
+        {
+          type: "separator",
+          margin: "sm",
+          color: "#F0F0F0",
+        },
+      ];
+    });
 
-      return {
+    // 2. ประกอบโครงสร้างหลักของ Flex Message Payload เพื่อนำส่งเข้า LINE API
+    const flexPayload = {
+      type: "flex",
+      altText: `🔔 รายงานราคาตลาด: ${store_name}`,
+      contents: {
         type: "bubble",
+        styles: {
+          header: { backgroundColor: "#0066C8" },
+        },
         header: {
           type: "box",
           layout: "vertical",
-          backgroundColor: "#005bb7",
-          paddingAll: "md",
           contents: [
             {
               type: "text",
               text: "RVP MARKET INTELLIGENCE",
+              color: "#FFFFFF",
               weight: "bold",
               size: "sm",
-              color: "#ffffff",
+              tracking: "wide",
             },
           ],
         },
         body: {
           type: "box",
           layout: "vertical",
-          paddingAll: "md",
-          contents: flexContents,
+          contents: [
+            {
+              type: "text",
+              text: store_name,
+              weight: "bold",
+              size: "lg",
+              color: "#111111",
+            },
+            {
+              type: "text",
+              text: `👤 ผู้รายงาน: ${surveyor_name}`,
+              size: "xs",
+              color: "#666666",
+              margin: "xs",
+            },
+            {
+              type: "text",
+              text: `📦 รายงานข้อมูลราคารวม: ${items.length} SKUs`,
+              size: "xs",
+              color: "#666666",
+            },
+            {
+              type: "separator",
+              margin: "md",
+              color: "#DDDDDD",
+            },
+            ...skuContents,
+          ],
         },
-      };
-    }); // ปิด map ตรงนี้ครับ
-
-    await axios.post(
-      "https://api.line.me/v2/bot/message/broadcast",
-      {
-        messages: [
-          {
-            type: "flex",
-            altText: "รายงานราคา",
-            contents: { type: "carousel", contents: carouselBubbles },
-          },
-        ],
+        footer: {
+          type: "box",
+          layout: "vertical",
+          contents: [
+            {
+              type: "text",
+              text: "⚡ สรุปข้อมูลอัตโนมัติโดยระบบวิเคราะห์ข้อมูล RVP",
+              size: "xs",
+              color: "#AAAAAA",
+              align: "center",
+            },
+          ],
+        },
       },
+    };
+
+    // 3. ยิงโครงสร้างข้อมูล Flex Payload ไปยัง LINE Messaging API ด้วย Token ของท่าน
+    const lineResponse = await fetch(
+      "https://api.line.me/v2/bot/message/push",
       {
+        method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${finalLineToken}`,
+          Authorization: `Bearer ${process.env.LINE_CHANNEL_ACCESS_TOKEN}`,
         },
+        body: JSON.stringify({
+          to: process.env.LINE_TARGET_GROUP_OR_USER_ID, // ID กลุ่มหรือแชทปลายทาง
+          messages: [flexPayload],
+        }),
       },
     );
 
+    if (!lineResponse.ok) {
+      const errText = await lineResponse.text();
+      console.error("LINE API Error:", errText);
+      return NextResponse.json({ error: "ส่งไลน์ไม่สำเร็จ" }, { status: 500 });
+    }
+
     return NextResponse.json({ success: true });
   } catch (error: any) {
-    console.error("❌ Error:", error.response?.data || error.message);
+    console.error("Internal Server Error:", error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }

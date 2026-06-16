@@ -477,10 +477,11 @@ export default function AddPricePage() {
             `บาร์โค้ด ${item.barcode} บันทึกไม่สำเร็จ: ${error.message}`,
           );
 
-        // 🟢 การันตีการส่งคีย์และตัวแปร URL แนบเข้าไลน์อย่างครบถ้วน (ป้องกันปุ่มกดดูรูปหาย)
+        // 🟢 แก้ไขจุดนี้ภายในฟังก์ชัน handleSaveAllSurveys (ประมาณบรรทัดที่ 257-270)
         uploadedItemsForLine.push({
           barcode: item.barcode,
           descriptions: item.descriptions,
+          pack_name: item.pack_name || item.descriptions, // เพิ่มคีย์นี้เพื่อให้ดึงชื่อสินค้าสั้นกระชับไปแสดงผลบนการ์ด
           price: item.price,
           promo_price: item.promo_price,
           promo_details: item.promo_details,
@@ -488,8 +489,8 @@ export default function AddPricePage() {
           company: item.company,
           company_type: item.company_type,
           category: item.category,
-          price_tag_url: price_tag_url || null, // URL สดๆ จากถังคลาวด์สำหรับปุ่ม "📸 รูปป้าย"
-          shelf_view_url: shelf_view_url || null, // URL สดๆ จากถังคลาวด์สำหรับปุ่ม "📦 รูปชั้น"
+          price_tag_url: price_tag_url || null, // URL รูปภาพป้ายราคาบน Supabase Storage
+          shelf_view_url: shelf_view_url || null, // URL รูปภาพหน้าชั้นวางบน Supabase Storage
           imageurl: item.imageurl || null,
         });
       }
