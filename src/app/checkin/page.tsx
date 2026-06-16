@@ -1,4 +1,3 @@
-//Checkin/page
 /* eslint-disable @next/next/no-img-element */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
@@ -11,13 +10,8 @@ import {
   MapPin,
   Camera,
   User,
-  Store,
-  CheckCircle2,
   Home,
-  Trash2,
   Loader2,
-  Filter,
-  RotateCw,
   LogIn,
   LogOut,
 } from "lucide-react";
@@ -57,6 +51,7 @@ export default function CheckinPage() {
   const [isLoadingStores, setIsLoadingStores] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  // สเตทสำหรับ Dropdown Chanel และ Account
   const [selectedChanel, setSelectedChanel] = useState("");
   const [selectedAccount, setSelectedAccount] = useState("");
 
@@ -68,6 +63,8 @@ export default function CheckinPage() {
   const [userCode, setUserCode] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [companyTag, setCompanyTag] = useState("");
+
+  const [showIosLineWarning, setShowIosLineWarning] = useState(false);
 
   const triggerCamera = () => {
     fileInputRef.current?.click();
@@ -112,8 +109,14 @@ export default function CheckinPage() {
       },
       (error) => {
         setIsGpsReady(false);
-        // เพิ่ม Error Handling เพื่อให้รู้ว่าติดที่ Permission หรือ timeout
-        if (error.code === error.PERMISSION_DENIED) {
+        const ua = navigator.userAgent.toLowerCase();
+        const isLine = ua.includes("line");
+        const isIOS = /iphone|ipad|ipod/.test(ua);
+
+        if (isLine && isIOS) {
+          setGpsStatus("❌ แอป LINE บล็อกพิกัดบน iOS");
+          setShowIosLineWarning(true);
+        } else if (error.code === error.PERMISSION_DENIED) {
           setGpsStatus(
             "❌ ถูกปฏิเสธสิทธิ์เข้าถึงตำแหน่ง (โปรดเปิดสิทธิ์ใน Setting)",
           );
@@ -121,13 +124,13 @@ export default function CheckinPage() {
           setGpsStatus("❌ ไม่สามารถจับพิกัดได้ (โปรดเช็คสัญญาณ GPS)");
         }
       },
-      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 },
     );
   };
 
   useEffect(() => {
     fetchCurrentLocation();
-    const storedUsername = localStorage.getItem("userCode") || "M00000";
+    const storedUsername = localStorage.getItem("userCode") || "";
     const storedName = localStorage.getItem("userName") || "ไม่ระบุชื่อพนักงาน";
     const storedTag = localStorage.getItem("companyTag") || "AUDITOR";
 
@@ -174,17 +177,37 @@ export default function CheckinPage() {
     getSupabaseStores();
   }, []);
 
+  // 🟢 ลอจิกหัวใจสำคัญ: กรองร้านค้า 100% ตามที่ต้องการ
   const baseStores = stores.filter((store) => {
-    const cleanUserCode = userCode.trim().toUpperCase();
+    if (!userCode) return false;
     if (companyTag.includes("ADMIN")) return true;
-    if (cleanUserCode.startsWith("M"))
+
+    const cleanUserCode = userCode.trim().toUpperCase();
+    const firstLetter = cleanUserCode.charAt(0);
+
+    // 📌 กฎ 1: รหัส M ดึงตาม mer_code
+    if (firstLetter === "M") {
       return store.mer_code?.toUpperCase() === cleanUserCode;
-    return true;
+    }
+    // 📌 กฎ 2: รหัส C (Commando) ดึงตาม Area ของหัวหน้า (K)
+    // ตัวอย่าง: C08001 -> ตัดมาแค่ 08 -> ต่อกับ K กลายเป็น K08
+    else if (firstLetter === "C") {
+      const managerArea = "K" + cleanUserCode.substring(1, 3); // ได้ค่า "K08"
+      return store.area?.toUpperCase() === managerArea;
+    }
+    // 📌 กฎ 3: รหัส K, B ดึงตาม Area ตัวเองตรงๆ (เช่น K08 -> ดึง Area K08)
+    else if (["K", "B"].includes(firstLetter)) {
+      return store.area?.toUpperCase() === cleanUserCode;
+    }
+
+    return store.mer_code?.toUpperCase() === cleanUserCode;
   });
 
+  // สร้างตัวเลือก Dropdown สำหรับ Chanel และ Account
   const uniqueChanels = Array.from(
     new Set(baseStores.map((s) => s.chanel).filter(Boolean)),
   );
+
   const uniqueAccounts = Array.from(
     new Set(
       baseStores
@@ -193,6 +216,7 @@ export default function CheckinPage() {
         .filter(Boolean),
     ),
   );
+
   const displayedStores = baseStores.filter(
     (store) =>
       (!selectedChanel || store.chanel === selectedChanel) &&
@@ -208,7 +232,7 @@ export default function CheckinPage() {
       return Swal.fire({
         icon: "error",
         title: "ยังไม่ได้พิกัด GPS",
-        text: "โปรดรอให้ระบบจับตำแหน่งสำเร็จก่อนครับ",
+        text: "โปรดรอให้ระบบจับตำแหน่งสำเร็จ หรือเปิดผ่าน Safari บน iOS",
       });
     if (!imageFile)
       return Swal.fire({
@@ -236,13 +260,11 @@ export default function CheckinPage() {
           image_url: publicUrl,
           created_at: new Date().toISOString(),
 
-          // 🟢 ของเดิมที่มีอยู่แล้ว
           store_id: currentStore.id,
           store_name: currentStore.store_name,
           store_code: currentStore.store_code,
           store_area: currentStore.area,
 
-          // 🟢 เติมท่อส่งข้อมูลร้านค้าส่วนที่เหลือเข้าไปให้ครบถ้วนครับพี่นิวาส
           store_chanel: currentStore.chanel,
           store_account: currentStore.account,
           store_province: currentStore.province,
@@ -289,12 +311,12 @@ export default function CheckinPage() {
   };
 
   return (
-    <div className="min-h-screen bg-[#bbf5eb] font-sans pb-12">
+    <div className="min-h-screen bg-[#bbf5eb] font-sans pb-12 relative">
       <header className="bg-gradient-to-r from-[#1e3a8a] via-[#0f172a] to-[#1e293b] text-white shadow-lg border-b border-blue-900/40">
         <div className="max-w-4xl mx-auto px-4 py-4 flex flex-col sm:flex-row justify-between items-center gap-3">
           <div className="flex items-center space-x-3 text-center sm:text-left">
             <div className="bg-white p-1.5 rounded-xl shadow-md">
-              <img src="/favicon.ico" className="h-10 w-auto" />
+              <img src="/favicon.ico" className="h-10 w-auto" alt="logo" />
             </div>
             <div>
               <h1 className="text-lg font-bold">Check-in Portal</h1>
@@ -303,7 +325,7 @@ export default function CheckinPage() {
           </div>
           <button
             onClick={() => router.push("/")}
-            className="px-3 py-2 bg-white/10 rounded-xl text-xs font-bold flex items-center gap-1"
+            className="px-3 py-2 bg-white/10 hover:bg-white/20 rounded-xl text-xs font-bold flex items-center gap-1 transition-all"
           >
             <Home className="w-3.5 h-3.5" /> กลับหน้าหลัก
           </button>
@@ -317,7 +339,7 @@ export default function CheckinPage() {
           </div>
           <div>
             <p className="text-[10px] font-bold text-slate-400 uppercase">
-              ผู้รายงานตัว ({userCode})
+              ผู้รายงานตัว ({userCode || "กำลังโหลด..."})
             </p>
             <h3 className="text-base font-bold text-slate-800">
               {displayName}
@@ -329,8 +351,12 @@ export default function CheckinPage() {
           <div className="grid grid-cols-2 gap-3">
             <select
               value={selectedChanel}
-              onChange={(e) => setSelectedChanel(e.target.value)}
-              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-2 text-xs font-semibold"
+              onChange={(e) => {
+                setSelectedChanel(e.target.value);
+                setSelectedAccount("");
+                setSelectedStore("");
+              }}
+              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-2 text-xs font-semibold outline-none focus:border-blue-500 transition-all"
             >
               <option value="">-- Chanel --</option>
               {uniqueChanels.map((c) => (
@@ -341,8 +367,11 @@ export default function CheckinPage() {
             </select>
             <select
               value={selectedAccount}
-              onChange={(e) => setSelectedAccount(e.target.value)}
-              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-2 text-xs font-semibold"
+              onChange={(e) => {
+                setSelectedAccount(e.target.value);
+                setSelectedStore("");
+              }}
+              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-2 text-xs font-semibold outline-none focus:border-blue-500 transition-all"
             >
               <option value="">-- Account --</option>
               {uniqueAccounts.map((a) => (
@@ -352,18 +381,28 @@ export default function CheckinPage() {
               ))}
             </select>
           </div>
-          <select
-            value={selectedStore}
-            onChange={(e) => setSelectedStore(e.target.value)}
-            className="w-full bg-slate-50 p-3 rounded-xl border border-slate-200 text-sm"
-          >
-            <option value="">เลือกร้านค้า ({displayedStores.length})</option>
-            {displayedStores.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.store_name} [{s.store_code}]
+
+          {isLoadingStores ? (
+            <div className="text-center py-3 text-xs text-slate-500 flex items-center justify-center gap-1.5 bg-slate-50 rounded-xl border border-slate-100">
+              <Loader2 className="w-4 h-4 animate-spin text-blue-600" />{" "}
+              กำลังประมวลผลข้อมูลสาขา...
+            </div>
+          ) : (
+            <select
+              value={selectedStore}
+              onChange={(e) => setSelectedStore(e.target.value)}
+              className="w-full bg-slate-50 p-3 rounded-xl border border-slate-200 text-sm font-semibold outline-none focus:border-blue-500 transition-all"
+            >
+              <option value="">
+                เลือกร้านค้าที่ได้รับมอบหมาย ({displayedStores.length})
               </option>
-            ))}
-          </select>
+              {displayedStores.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.store_name} [{s.store_code}]
+                </option>
+              ))}
+            </select>
+          )}
         </div>
 
         <div className="grid grid-cols-2 gap-3">
@@ -372,20 +411,20 @@ export default function CheckinPage() {
               setIsCheckIn(true);
               setIsCheckOut(false);
             }}
-            className={`p-4 rounded-2xl border ${isCheckIn ? "bg-blue-50 border-blue-300 text-blue-600" : "bg-white"}`}
+            className={`p-4 rounded-2xl border transition-all ${isCheckIn ? "bg-blue-50 border-blue-300 text-blue-600 shadow-sm" : "bg-white hover:border-blue-200"}`}
           >
-            <LogIn className="w-6 h-6 mx-auto" />{" "}
-            <span className="text-xs font-bold">Check-in</span>
+            <LogIn className="w-6 h-6 mx-auto" />
+            <span className="text-xs font-bold block mt-1">Check-in</span>
           </button>
           <button
             onClick={() => {
               setIsCheckOut(true);
               setIsCheckIn(false);
             }}
-            className={`p-4 rounded-2xl border ${isCheckOut ? "bg-emerald-50 border-emerald-300 text-emerald-600" : "bg-white"}`}
+            className={`p-4 rounded-2xl border transition-all ${isCheckOut ? "bg-emerald-50 border-emerald-300 text-emerald-600 shadow-sm" : "bg-white hover:border-emerald-200"}`}
           >
-            <LogOut className="w-6 h-6 mx-auto" />{" "}
-            <span className="text-xs font-bold">Check-out</span>
+            <LogOut className="w-6 h-6 mx-auto" />
+            <span className="text-xs font-bold block mt-1">Check-out</span>
           </button>
         </div>
 
@@ -394,33 +433,37 @@ export default function CheckinPage() {
             type="file"
             ref={fileInputRef}
             accept="image/*"
+            capture="environment"
             onChange={handleImageCapture}
             className="hidden"
           />
           <div
             onClick={triggerCamera}
-            className="border-2 border-dashed h-40 flex flex-col items-center justify-center cursor-pointer bg-slate-50/50 rounded-xl hover:border-blue-400"
+            className="border-2 border-dashed h-40 flex flex-col items-center justify-center cursor-pointer bg-slate-50/50 rounded-xl hover:border-blue-400 overflow-hidden transition-all"
           >
             {imagePreview ? (
-              <img src={imagePreview} className="h-full object-contain" />
+              <img
+                src={imagePreview}
+                className="h-full w-full object-contain"
+                alt="preview"
+              />
             ) : (
               <>
                 <Camera className="w-8 h-8 text-slate-400" />
                 <span className="text-xs font-bold text-slate-600 mt-2">
-                  ถ่ายภาพปฏิบัติงาน
+                  ถ่ายภาพปฏิบัติงานจริงหน้าสาขา
                 </span>
               </>
             )}
           </div>
         </div>
 
-        {/* 🟢 บล็อกแสดง GPS สถานะ */}
         <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4 space-y-2">
           <label className="text-xs font-bold text-slate-700 block">
-            สถานะ GPS
+            สถานะตรวจสอบพิกัด (GPS)
           </label>
           <div
-            className={`rounded-xl p-3 flex items-start space-x-2.5 border ${isGpsReady ? "bg-emerald-50 border-emerald-100" : "bg-amber-50 border-amber-100"}`}
+            className={`rounded-xl p-3 flex items-start space-x-2.5 border transition-all ${isGpsReady ? "bg-emerald-50 border-emerald-100" : "bg-amber-50 border-amber-100"}`}
           >
             <div
               className={`p-1 rounded-lg text-white mt-0.5 ${isGpsReady ? "bg-emerald-500" : "bg-amber-500 animate-pulse"}`}
@@ -434,7 +477,7 @@ export default function CheckinPage() {
                 {gpsStatus}
               </p>
               {isGpsReady && (
-                <p className="text-[10px] text-emerald-600">
+                <p className="text-[10px] text-emerald-600 font-mono mt-0.5">
                   Lat: {deviceLat?.toFixed(5)}, Lng: {deviceLng?.toFixed(5)}
                 </p>
               )}
@@ -443,9 +486,9 @@ export default function CheckinPage() {
           {!isGpsReady && (
             <button
               onClick={fetchCurrentLocation}
-              className="w-full text-[10px] bg-slate-100 py-1 rounded-lg font-bold text-slate-600"
+              className="w-full text-[10px] bg-slate-100 hover:bg-slate-200 py-1.5 rounded-lg font-bold text-slate-600 transition-all"
             >
-              ลองจับพิกัดใหม่
+              🔄 เรียกซ้ำตำแหน่งพิกัดดาวเทียม
             </button>
           )}
         </div>
@@ -453,15 +496,77 @@ export default function CheckinPage() {
         <button
           onClick={handleSubmitCallVisit}
           disabled={isSubmitting}
-          className="w-full bg-blue-600 text-white p-4 rounded-2xl font-bold"
+          className="w-full bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white p-4 rounded-2xl font-black text-xs shadow-md transition-all flex items-center justify-center gap-2"
         >
-          {isSubmitting ? "กำลังบันทึก..." : "บันทึกข้อมูล Call Visit"}
+          {isSubmitting && <Loader2 className="w-4 animate-spin" />}
+          {isSubmitting
+            ? "กำลังอัปโหลดและบันทึกข้อมูล..."
+            : "บันทึกข้อมูลการเข้าปฏิบัติงาน (Call Visit)"}
         </button>
       </main>
 
-      <footer className="py-5 text-center text-[10px] text-slate-400">
+      <footer className="py-5 text-center text-[10px] text-slate-400 font-bold">
         &copy; 2026 RIVERPRO INTERTRADE CO., LTD.
       </footer>
+
+      {showIosLineWarning && (
+        <div className="fixed inset-0 bg-slate-900/95 backdrop-blur-md z-[9999] flex flex-col items-center justify-center p-6 text-white text-center animate-fadeIn">
+          <div className="absolute top-4 right-4 animate-bounce text-right">
+            <p className="text-sm font-black text-amber-400">กดตรงนี้ครับ ↗</p>
+            <p className="text-xs text-slate-300">จุดสามจุดมุมขวาบน</p>
+          </div>
+
+          <div className="max-w-sm space-y-5 mt-12">
+            <div className="w-16 h-16 bg-amber-500 rounded-2xl flex items-center justify-center mx-auto shadow-[0_0_20px_rgba(245,158,11,0.4)]">
+              <MapPin className="w-8 h-8 text-white animate-pulse" />
+            </div>
+
+            <div className="space-y-2">
+              <h3 className="text-lg font-black text-amber-400">
+                ระบบเปิดผ่าน LINE Browser (iOS)
+              </h3>
+              <p className="text-xs text-slate-300 leading-relaxed px-4">
+                เพื่อความเสถียรในการทำงานและระบบดาวเทียม GPS โปรดย้ายไปเปิดบน
+                Safari ก่อนเข้าเช็คอินครับ
+              </p>
+            </div>
+
+            <div className="bg-white/10 border border-white/10 rounded-2xl p-4 text-left space-y-3">
+              <p className="text-xs font-bold text-amber-300 flex items-center gap-1.5">
+                💡 วิธีการย้ายเบราว์เซอร์:
+              </p>
+              <ol className="text-xs text-slate-200 space-y-2 list-decimal list-inside font-semibold">
+                <li>
+                  มองไปที่{" "}
+                  <span className="text-amber-400 font-bold">มุมขวาบนสุด</span>{" "}
+                  ของหน้าจอมือถือ
+                </li>
+                <li>
+                  กดปุ่ม{" "}
+                  <span className="bg-white/20 px-1.5 py-0.5 rounded font-black">
+                    ⋮
+                  </span>{" "}
+                  หรือ{" "}
+                  <span className="bg-white/20 px-1.5 py-0.5 rounded font-black">
+                    ...
+                  </span>
+                </li>
+                <li>
+                  เลือกคำสั่ง{" "}
+                  <span className="text-emerald-400 font-bold">
+                    "เปิดใน Safari" (Open in Safari)
+                  </span>
+                </li>
+              </ol>
+            </div>
+
+            <p className="text-[11px] text-slate-400 font-medium pt-4">
+              เมื่อย้ายไป Safari แล้ว หน้าต่างนี้จะหายไปและบันทึกพิกัดได้ 100%
+              ครับ
+            </p>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
