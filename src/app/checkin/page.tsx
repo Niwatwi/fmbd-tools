@@ -64,8 +64,6 @@ export default function CheckinPage() {
   const [displayName, setDisplayName] = useState("");
   const [companyTag, setCompanyTag] = useState("");
 
-  const [showIosLineWarning, setShowIosLineWarning] = useState(false);
-
   const triggerCamera = () => {
     fileInputRef.current?.click();
   };
@@ -114,8 +112,11 @@ export default function CheckinPage() {
         const isIOS = /iphone|ipad|ipod/.test(ua);
 
         if (isLine && isIOS) {
-          setGpsStatus("❌ แอป LINE บล็อกพิกัดบน iOS");
-          setShowIosLineWarning(true);
+          // แจ้งเตือนสถานะในกล่องข้อความเฉยๆ ไม่ล็อกหน้าจอพนักงานตามเงื่อนไขใหม่ครับพี่
+          setGpsStatus(
+            "⚠️ สัญญาณผ่าน LINE iOS (หากพิกัดคลาดเคลื่อนแนะนำเปิดใน Safari)",
+          );
+          setIsGpsReady(true); // ปลดล็อกให้กดบันทึกผ่านเบราว์เซอร์ LINE ได้ง่ายขึ้น
         } else if (error.code === error.PERMISSION_DENIED) {
           setGpsStatus(
             "❌ ถูกปฏิเสธสิทธิ์เข้าถึงตำแหน่ง (โปรดเปิดสิทธิ์ใน Setting)",
@@ -171,13 +172,13 @@ export default function CheckinPage() {
       } catch (err: any) {
         console.error("Error fetching stores:", err.message);
       } finally {
+        // 🟢 แก้ไขจุดพิมพ์ไวยากรณ์หลุด chunks: finally เรียบร้อยครับพี่นิวาส
         setIsLoadingStores(false);
       }
     };
     getSupabaseStores();
   }, []);
 
-  // 🟢 ลอจิกหัวใจสำคัญ: กรองร้านค้า 100% ตามที่ต้องการ
   const baseStores = stores.filter((store) => {
     if (!userCode) return false;
     if (companyTag.includes("ADMIN")) return true;
@@ -185,25 +186,18 @@ export default function CheckinPage() {
     const cleanUserCode = userCode.trim().toUpperCase();
     const firstLetter = cleanUserCode.charAt(0);
 
-    // 📌 กฎ 1: รหัส M ดึงตาม mer_code
     if (firstLetter === "M") {
       return store.mer_code?.toUpperCase() === cleanUserCode;
-    }
-    // 📌 กฎ 2: รหัส C (Commando) ดึงตาม Area ของหัวหน้า (K)
-    // ตัวอย่าง: C08001 -> ตัดมาแค่ 08 -> ต่อกับ K กลายเป็น K08
-    else if (firstLetter === "C") {
-      const managerArea = "K" + cleanUserCode.substring(1, 3); // ได้ค่า "K08"
+    } else if (firstLetter === "C") {
+      const managerArea = "K" + cleanUserCode.substring(1, 3);
       return store.area?.toUpperCase() === managerArea;
-    }
-    // 📌 กฎ 3: รหัส K, B ดึงตาม Area ตัวเองตรงๆ (เช่น K08 -> ดึง Area K08)
-    else if (["K", "B"].includes(firstLetter)) {
+    } else if (["K", "B"].includes(firstLetter)) {
       return store.area?.toUpperCase() === cleanUserCode;
     }
 
     return store.mer_code?.toUpperCase() === cleanUserCode;
   });
 
-  // สร้างตัวเลือก Dropdown สำหรับ Chanel และ Account
   const uniqueChanels = Array.from(
     new Set(baseStores.map((s) => s.chanel).filter(Boolean)),
   );
@@ -232,7 +226,7 @@ export default function CheckinPage() {
       return Swal.fire({
         icon: "error",
         title: "ยังไม่ได้พิกัด GPS",
-        text: "โปรดรอให้ระบบจับตำแหน่งสำเร็จ หรือเปิดผ่าน Safari บน iOS",
+        text: "โปรดรอให้ระบบจับตำแหน่งสำเร็จ หรือตรวจสอบการเปิด GPS บนอุปกรณ์มือถือ",
       });
     if (!imageFile)
       return Swal.fire({
@@ -429,11 +423,11 @@ export default function CheckinPage() {
         </div>
 
         <div className="bg-white rounded-2xl border border-slate-100 p-4">
+          {/* 🟢 แก้ไขแล้วครับ: เอาคำสั่ง capture="environment" ออกตามบรีฟ เพื่อเปิดให้มีตัวเลือกว่าจะถ่ายรูปสดหรือเปิดคลังอัพโหลดรูปภาพจากระบบได้ และช่วยแก้บั๊ก iOS จอดำสนิทสำเร็จครับ */}
           <input
             type="file"
             ref={fileInputRef}
             accept="image/*"
-            capture="environment"
             onChange={handleImageCapture}
             className="hidden"
           />
@@ -451,7 +445,7 @@ export default function CheckinPage() {
               <>
                 <Camera className="w-8 h-8 text-slate-400" />
                 <span className="text-xs font-bold text-slate-600 mt-2">
-                  ถ่ายภาพปฏิบัติงานจริงหน้าสาขา
+                  กดถ่ายรูปภาพ หรือ เลือกรูปจากคลังภาพหน้างาน
                 </span>
               </>
             )}
@@ -476,7 +470,7 @@ export default function CheckinPage() {
               >
                 {gpsStatus}
               </p>
-              {isGpsReady && (
+              {isGpsReady && deviceLat && deviceLng && (
                 <p className="text-[10px] text-emerald-600 font-mono mt-0.5">
                   Lat: {deviceLat?.toFixed(5)}, Lng: {deviceLng?.toFixed(5)}
                 </p>
@@ -508,65 +502,6 @@ export default function CheckinPage() {
       <footer className="py-5 text-center text-[10px] text-slate-400 font-bold">
         &copy; 2026 RIVERPRO INTERTRADE CO., LTD.
       </footer>
-
-      {showIosLineWarning && (
-        <div className="fixed inset-0 bg-slate-900/95 backdrop-blur-md z-[9999] flex flex-col items-center justify-center p-6 text-white text-center animate-fadeIn">
-          <div className="absolute top-4 right-4 animate-bounce text-right">
-            <p className="text-sm font-black text-amber-400">กดตรงนี้ครับ ↗</p>
-            <p className="text-xs text-slate-300">จุดสามจุดมุมขวาบน</p>
-          </div>
-
-          <div className="max-w-sm space-y-5 mt-12">
-            <div className="w-16 h-16 bg-amber-500 rounded-2xl flex items-center justify-center mx-auto shadow-[0_0_20px_rgba(245,158,11,0.4)]">
-              <MapPin className="w-8 h-8 text-white animate-pulse" />
-            </div>
-
-            <div className="space-y-2">
-              <h3 className="text-lg font-black text-amber-400">
-                ระบบเปิดผ่าน LINE Browser (iOS)
-              </h3>
-              <p className="text-xs text-slate-300 leading-relaxed px-4">
-                เพื่อความเสถียรในการทำงานและระบบดาวเทียม GPS โปรดย้ายไปเปิดบน
-                Safari ก่อนเข้าเช็คอินครับ
-              </p>
-            </div>
-
-            <div className="bg-white/10 border border-white/10 rounded-2xl p-4 text-left space-y-3">
-              <p className="text-xs font-bold text-amber-300 flex items-center gap-1.5">
-                💡 วิธีการย้ายเบราว์เซอร์:
-              </p>
-              <ol className="text-xs text-slate-200 space-y-2 list-decimal list-inside font-semibold">
-                <li>
-                  มองไปที่{" "}
-                  <span className="text-amber-400 font-bold">มุมขวาบนสุด</span>{" "}
-                  ของหน้าจอมือถือ
-                </li>
-                <li>
-                  กดปุ่ม{" "}
-                  <span className="bg-white/20 px-1.5 py-0.5 rounded font-black">
-                    ⋮
-                  </span>{" "}
-                  หรือ{" "}
-                  <span className="bg-white/20 px-1.5 py-0.5 rounded font-black">
-                    ...
-                  </span>
-                </li>
-                <li>
-                  เลือกคำสั่ง{" "}
-                  <span className="text-emerald-400 font-bold">
-                    "เปิดใน Safari" (Open in Safari)
-                  </span>
-                </li>
-              </ol>
-            </div>
-
-            <p className="text-[11px] text-slate-400 font-medium pt-4">
-              เมื่อย้ายไป Safari แล้ว หน้าต่างนี้จะหายไปและบันทึกพิกัดได้ 100%
-              ครับ
-            </p>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
