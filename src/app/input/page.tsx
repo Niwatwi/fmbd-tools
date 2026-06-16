@@ -124,17 +124,12 @@ export default function CompleteRightThemeInputPage() {
   useEffect(() => {
     const checkAuth = () => {
       const storedUsername = localStorage.getItem("userCode");
-      console.log("Debug Auth -> storedUsername:", storedUsername);
-
       if (!storedUsername) {
         router.push("/login");
         return;
       }
-
-      console.log("Debug Auth -> User found, setting Authorized to true");
       setIsAuthorized(true);
     };
-
     checkAuth();
   }, [router]);
 
@@ -380,7 +375,6 @@ export default function CompleteRightThemeInputPage() {
       baseList.map((s) => s.account).filter((a): a is string => !!a),
     );
     return Array.from(uniques).sort();
-    // 🟢 แก้ไข: ลบคำว่า text ออกจากตรงนี้ครับพี่
   }, [areaStoresList, selectedArea, selectedAuditor, selectedChannel]);
 
   const finalFilteredStores = useMemo(() => {
@@ -452,6 +446,7 @@ export default function CompleteRightThemeInputPage() {
     );
   };
 
+  // 🟢 แก้ไขจุดที่ 1: รวบการทำงานเก็บ State ของไฟล์และ URL จำลองไว้ในคำสั่งเดียว
   const handleRowImg = (
     e: React.ChangeEvent<HTMLInputElement>,
     id: number,
@@ -460,49 +455,58 @@ export default function CompleteRightThemeInputPage() {
     const file = e.target.files?.[0];
     if (file) {
       const previewUrl = URL.createObjectURL(file);
-      updateItemField(id, field, previewUrl);
-
       const fileField =
         field === "priceTagImg"
           ? "priceTagFile"
           : field === "shelfImg"
             ? "shelfFile"
             : "cmaFile";
-      updateItemField(id, fileField, file);
+
+      setItems((prev) =>
+        prev.map((item) =>
+          item.id === id
+            ? { ...item, [field]: previewUrl, [fileField]: file }
+            : item,
+        ),
+      );
     }
   };
 
+  // 🟢 แก้ไขจุดที่ 2: ดักจับ Error ตอนอัปโหลดรูปให้ขาด ไม่ยอมให้ผ่านถ้าเซฟรูปไม่สำเร็จ
   const uploadToSupabaseStorage = async (
     file: File,
     subFolder: string,
-  ): Promise<string | null> => {
-    try {
-      const fileExt = file.name.split(".").pop();
-      const uniqueFileName = `${subFolder}_${Date.now()}_${Math.random().toString(36).substring(2, 7)}.${fileExt}`;
-      const filePath = `${uniqueFileName}`;
+  ): Promise<string> => {
+    const fileExt = file.name.split(".").pop()?.toLowerCase();
+    const uniqueFileName = `${subFolder}_${Date.now()}_${Math.random().toString(36).substring(2, 7)}.${fileExt}`;
+    const filePath = `${uniqueFileName}`;
 
-      const { error: uploadError } = await supabase.storage
-        .from("oos-images")
-        .upload(filePath, file);
+    const { error: uploadError } = await supabase.storage
+      .from("oos-images")
+      .upload(filePath, file, { cacheControl: "3600", upsert: false });
 
-      if (uploadError) throw uploadError;
-
-      const { data: urlData } = supabase.storage
-        .from("oos-images")
-        .getPublicUrl(filePath);
-
-      return urlData.publicUrl;
-    } catch (err) {
-      console.error("Storage upload failed:", err);
-      return null;
+    if (uploadError) {
+      console.error("Storage upload failed details:", uploadError);
+      throw new Error(
+        `อัปโหลดรูป ${subFolder} ล้มเหลว (${uploadError.message})`,
+      );
     }
+
+    const { data: urlData } = supabase.storage
+      .from("oos-images")
+      .getPublicUrl(filePath);
+
+    if (!urlData || !urlData.publicUrl) {
+      throw new Error("ระบบไม่สามารถสร้างลิงก์รูปภาพให้ได้ กรุณาลองใหม่");
+    }
+
+    return urlData.publicUrl;
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
 
-    // [ด่านที่ 1] ตรวจจับสินค้าซ้ำภายในฟอร์มเดียวกัน
     const validProducts = items
       .filter((item) => item.oosReason !== "ไม่มีสินค้าที่ OOS" && item.product)
       .map((item) => `${item.company}_${item.product}`);
@@ -542,7 +546,7 @@ export default function CompleteRightThemeInputPage() {
 
     Swal.fire({
       title: "กำลังตรวจสอบและอัปโหลด...",
-      text: "🚀 ระบบกำลังตรวจสอบความซ้ำซ้อนของรายงานและอัปโหลดไฟล์รูปภาพหลักฐานถาวร...",
+      text: "🚀 ระบบกำลังตรวจสอบและอัปโหลดไฟล์รูปภาพหลักฐาน กรุณารอสักครู่...",
       allowOutsideClick: false,
       didOpen: () => {
         Swal.showLoading();
@@ -550,7 +554,6 @@ export default function CompleteRightThemeInputPage() {
     });
 
     try {
-      // [ด่านที่ 2] ตรวจสอบสิทธิ์ห้ามส่งสินค้าซ้ำรายวันรายสาขา
       if (validProducts.length > 0) {
         const { data: existingVisits } = await supabase
           .from("store_visits")
@@ -620,8 +623,11 @@ export default function CompleteRightThemeInputPage() {
       const itemsToSave = [];
 
       for (const item of items) {
+        // 🟢 แก้ไขจุดที่ 3: ทำให้การเปรียบเทียบชื่อบริษัท (Company) ไม่สนใจตัวพิมพ์เล็กพิมพ์ใหญ่ ป้องกันหา Master รูปไม่เจอ
         const masterRow = dbProducts.find(
-          (p) => p.descriptions === item.product && p.company === item.company,
+          (p) =>
+            p.descriptions === item.product &&
+            p.company.toLowerCase() === item.company.toLowerCase(),
         );
 
         const isNoOos = item.oosReason === "ไม่มีสินค้าที่ OOS";
@@ -630,25 +636,32 @@ export default function CompleteRightThemeInputPage() {
         let finalShelfUrl = null;
         let finalCmaUrl = null;
 
+        // 🟢 เพิ่ม try-catch ย่อย เพื่อดักจับ Error ขณะอัปโหลดรูปภาพแต่ละชิ้นโดยเฉพาะ
         if (!isNoOos) {
-          if (item.priceTagFile) {
-            finalPriceTagUrl = await uploadToSupabaseStorage(
-              item.priceTagFile,
-              "pricetag",
+          try {
+            if (item.priceTagFile) {
+              finalPriceTagUrl = await uploadToSupabaseStorage(
+                item.priceTagFile,
+                "pricetag",
+              );
+            }
+            if (item.shelfFile) {
+              finalShelfUrl = await uploadToSupabaseStorage(
+                item.shelfFile,
+                "shelf",
+              );
+            }
+            if (item.cmaFile) {
+              finalCmaUrl = await uploadToSupabaseStorage(item.cmaFile, "cma");
+            }
+          } catch (uploadErr: any) {
+            throw new Error(
+              uploadErr.message ||
+                "รูปภาพอัปโหลดล้มเหลว กรุณาตรวจสอบสิทธิ์โฟลเดอร์ oos-images",
             );
-          }
-          if (item.shelfFile) {
-            finalShelfUrl = await uploadToSupabaseStorage(
-              item.shelfFile,
-              "shelf",
-            );
-          }
-          if (item.cmaFile) {
-            finalCmaUrl = await uploadToSupabaseStorage(item.cmaFile, "cma");
           }
         }
 
-        // 🟢 [ปรับปรุง] ถ้าเป็นโหมดไม่มีสินค้าขาด ให้เก็บชื่อบริษัทที่หน้าร้านเลือกจริงแทนการ Fix ค่าเป็น RIVERPRO
         itemsToSave.push({
           visit_id: visitData.id,
           company: item.company || "RIVERPRO",
@@ -675,7 +688,7 @@ export default function CompleteRightThemeInputPage() {
       Swal.fire({
         icon: "success",
         title: "บันทึกข้อมูลเรียบร้อย!",
-        text: "🚀 บันทึกประวัติสถานะชั้นวางและค่ายสินค้าสำเร็จกริบครับพี่นิวาส!",
+        text: "🚀 บันทึกประวัติสถานะชั้นวางและอัปโหลดไฟล์สมบูรณ์ครับพี่!",
         confirmButtonColor: "#2563eb",
         confirmButtonText: "รับทราบ",
         timer: 3500,
@@ -700,11 +713,11 @@ export default function CompleteRightThemeInputPage() {
         },
       ]);
       fetchPersonalKPI(selectedAuditor, dateKey);
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
       Swal.fire(
         "เกิดข้อผิดพลาด",
-        "ไม่สามารถเซฟประวัติชั้นวาง OOS ได้ในขณะนี้",
+        err.message || "ไม่สามารถเซฟข้อมูลได้ในขณะนี้",
         "error",
       );
     } finally {
@@ -733,11 +746,11 @@ export default function CompleteRightThemeInputPage() {
       />
 
       <div className="relative bg-white pt-5 pb-4 px-4 rounded-b-[2.5rem] shadow-md border-b border-slate-200">
-        <div className="absolute top-0 left-0 w-full h-2 bg-linear-to-r from-blue-600 to-teal-400"></div>
+        <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-blue-600 to-teal-400"></div>
         <button
           type="button"
           onClick={() => refreshMasterData(dateKey)}
-          className="absolute top-4 right-4 h-7 w-7 rounded-full bg-slate-50 flex items-center justify-center text-slate-600 shadow-xs"
+          className="absolute top-4 right-4 h-7 w-7 rounded-full bg-slate-50 flex items-center justify-center text-slate-600 shadow-sm"
         >
           <i
             className={`fa-solid fa-rotate ${fetchingMaster ? "animate-spin text-blue-600" : ""}`}
@@ -819,7 +832,7 @@ export default function CompleteRightThemeInputPage() {
         </div>
 
         {fetchingMaster ? (
-          <div className="text-center py-10 text-xs font-bold text-blue-600 animate-pulse bg-white rounded-2xl shadow-xs">
+          <div className="text-center py-10 text-xs font-bold text-blue-600 animate-pulse bg-white rounded-2xl shadow-sm">
             🔄 บูตระบบส่งสัญญาณ...
           </div>
         ) : (
@@ -832,7 +845,7 @@ export default function CompleteRightThemeInputPage() {
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-[10px] font-bold text-white bg-blue-600 px-3 py-1 rounded-t-lg w-fit shadow-xs">
+                  <label className="block text-[10px] font-bold text-white bg-blue-600 px-3 py-1 rounded-t-lg w-fit shadow-sm">
                     2. DATE KEY
                   </label>
                   <input
@@ -843,7 +856,7 @@ export default function CompleteRightThemeInputPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-[10px] font-bold text-white bg-blue-600 px-3 py-1 rounded-t-lg w-fit shadow-xs">
+                  <label className="block text-[10px] font-bold text-white bg-blue-600 px-3 py-1 rounded-t-lg w-fit shadow-sm">
                     3. AUDITOR TYPE
                   </label>
                   <select
@@ -866,7 +879,7 @@ export default function CompleteRightThemeInputPage() {
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-[10px] font-bold text-white bg-teal-600 px-3 py-1 rounded-t-lg w-fit shadow-xs">
+                  <label className="block text-[10px] font-bold text-white bg-teal-600 px-3 py-1 rounded-t-lg w-fit shadow-sm">
                     4. AREA
                   </label>
                   <select
@@ -888,7 +901,7 @@ export default function CompleteRightThemeInputPage() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-[10px] font-bold text-white bg-teal-600 px-3 py-1 rounded-t-lg w-fit shadow-xs">
+                  <label className="block text-[10px] font-bold text-white bg-teal-600 px-3 py-1 rounded-t-lg w-fit shadow-sm">
                     5. AUDITOR
                   </label>
                   <select
@@ -1012,7 +1025,7 @@ export default function CompleteRightThemeInputPage() {
                 {activeComments.map((comment) => (
                   <div
                     key={comment.id}
-                    className="bg-white p-3 rounded-xl border border-amber-100 shadow-xs space-y-2"
+                    className="bg-white p-3 rounded-xl border border-amber-100 shadow-sm space-y-2"
                   >
                     <div className="flex justify-between items-center">
                       <span className="text-[9px] font-black text-amber-600 bg-amber-50 px-2 py-0.5 rounded-lg border border-amber-100">
@@ -1042,7 +1055,7 @@ export default function CompleteRightThemeInputPage() {
                         type="button"
                         onClick={() => handleAuditorReply(comment.id)}
                         disabled={isReplying === comment.id}
-                        className="bg-blue-600 text-white px-3 py-1.5 rounded-lg text-[10px] font-black hover:bg-blue-700 transition-all active:scale-95 cursor-pointer shadow-xs"
+                        className="bg-blue-600 text-white px-3 py-1.5 rounded-lg text-[10px] font-black hover:bg-blue-700 transition-all active:scale-95 cursor-pointer shadow-sm"
                       >
                         {isReplying === comment.id ? (
                           <i className="fa-solid fa-spinner animate-spin"></i>
@@ -1065,7 +1078,7 @@ export default function CompleteRightThemeInputPage() {
                   <i className="fa-solid fa-boxes-stacked text-blue-900 mr-1"></i>{" "}
                   รายการสถานะชั้นวาง
                 </span>
-                <span className="block text-[10px] font-bold text-white bg-teal-600 px-3 py-1 rounded-t-lg w-fit shadow-xs">
+                <span className="block text-[10px] font-bold text-white bg-teal-600 px-3 py-1 rounded-t-lg w-fit shadow-sm">
                   รวม {items.length} รายการ
                 </span>
               </div>
@@ -1107,7 +1120,7 @@ export default function CompleteRightThemeInputPage() {
                 return (
                   <div
                     key={item.id}
-                    className="bg-white rounded-2xl shadow-xs p-4 border-2 border-slate-200 space-y-4 relative pt-6"
+                    className="bg-white rounded-2xl shadow-sm p-4 border-2 border-slate-200 space-y-4 relative pt-6"
                   >
                     {items.length > 1 && (
                       <button
@@ -1131,7 +1144,6 @@ export default function CompleteRightThemeInputPage() {
                         onChange={(e) => {
                           const val = e.target.value;
                           updateItemField(item.id, "oosReason", val);
-                          // รีเซ็ตเฉพาะหมวดหมู่ย่อยและตัวสินค้าหากไม่มีประวัติขาดแคลน
                           if (val === "ไม่มีสินค้าที่ OOS") {
                             updateItemField(item.id, "category", "");
                             updateItemField(item.id, "product", "");
@@ -1156,7 +1168,6 @@ export default function CompleteRightThemeInputPage() {
                       </select>
                     </div>
 
-                    {/* 🟢 🛠️ [ปรับปรุง] เปิดให้เลือก Company Type และ Company เสมอแม้สถานะเป็น "ไม่มีสินค้าที่ OOS" */}
                     <div className="grid grid-cols-2 gap-2 animate-in fade-in duration-300">
                       <div>
                         <label className="block text-[8px] font-bold text-slate-500 mb-1 text-left">
@@ -1210,7 +1221,6 @@ export default function CompleteRightThemeInputPage() {
                       </div>
                     </div>
 
-                    {/* 🟢 🛠️ ซ่อน (Hide) ตัวเลือก Category, สินค้า และส่วนอัปโหลดรูปภาพ เฉพาะเมื่อเป็น "ไม่มีสินค้าที่ OOS" */}
                     {!isNoOosMode && (
                       <div className="space-y-4 pt-2 border-t border-dashed border-slate-200 animate-in fade-in duration-300">
                         <div>
@@ -1425,7 +1435,6 @@ export default function CompleteRightThemeInputPage() {
         )}
       </div>
 
-      {/* FOOTER */}
       <footer className="mt-12 mb-8 py-6 px-4 text-center bg-blue-600 text-white border-t-2 border-white rounded-t-3xl shadow-lg">
         <p className="text-[9px] font-black uppercase tracking-widest text-blue-900 mb-3">
           by FMBD CONTROLLER
