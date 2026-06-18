@@ -3,6 +3,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
+import imageCompression from "browser-image-compression";
 import { useRouter } from "next/navigation";
 import Swal from "sweetalert2";
 import { supabase } from "@/lib/supabase";
@@ -294,13 +295,42 @@ export default function CheckinPage() {
     }
   };
 
-  const handleImageCapture = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImageCapture = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
-      setImageFile(file);
-      const reader = new FileReader();
-      reader.onloadend = () => setImagePreview(reader.result as string);
-      reader.readAsDataURL(file);
+    if (!file) return;
+
+    // 1. ดักจับไฟล์ที่ผิดปกติ (เช่น เลือกจาก Google Cloud ที่ยังไม่โหลดลงเครื่อง)
+    if (file.size === 0) {
+      alert("รูปภาพนี้ไม่สามารถใช้งานได้ กรุณาเลือกรูปภาพที่อยู่ในเครื่องครับ");
+      return;
+    }
+
+    try {
+      // 2. ตั้งค่าการบีบอัดไฟล์ (สำคัญมาก ป้องกัน Vercel Error และ Database บวม)
+      const options = {
+        maxSizeMB: 0.5, // บีบให้เหลือไม่เกิน 500 KB
+        maxWidthOrHeight: 1280, // ย่อขนาดภาพไม่ให้กว้าง/ยาวเกิน 1280px (พอใช้งานบนเว็บแล้ว)
+        useWebWorker: true,
+      };
+
+      // โชว์สถานะกำลังโหลด (ถ้ามี state loading)
+      // setIsLoading(true);
+
+      // 3. เริ่มการบีบอัด
+      const compressedFile = await imageCompression(file, options);
+
+      // 4. สร้าง Preview ให้ User ดูบนหน้าจอ (แปลงเป็น Object URL ชั่วคราว)
+      const previewUrl = URL.createObjectURL(compressedFile);
+      setImagePreview(previewUrl);
+
+      // 5. นำ compressedFile ไปเก็บไว้ใน State เพื่อรอจังหวะที่กดปุ่ม "บันทึกข้อมูล"
+      // แล้วค่อยอัปโหลดไฟล์ก้อนนี้ขึ้น Supabase Storage -> เอา URL มาบันทึกลง Database
+      setImageFile(compressedFile);
+    } catch (error) {
+      console.error("Error compressing image:", error);
+      alert("เกิดข้อผิดพลาดในการจัดการรูปภาพครับ");
+    } finally {
+      // setIsLoading(false);
     }
   };
 
