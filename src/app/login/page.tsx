@@ -38,9 +38,8 @@ export default function LoginPage() {
 
     const ua = navigator.userAgent.toLowerCase();
     const isLine = ua.includes("line");
-    const isIOS = /iphone|ipad|ipod/.test(ua);
 
-    if (isLine && isIOS) {
+    if (isLine) {
       setShowIosLineWarning(true);
     }
   }, []);
