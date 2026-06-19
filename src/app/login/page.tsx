@@ -15,7 +15,7 @@ import {
   MapPin,
   Copy,
   CheckCircle2,
-  Globe, // 🟢 เพิ่มไอคอนสำหรับเบราว์เซอร์
+  Globe,
 } from "lucide-react";
 
 export default function LoginPage() {
@@ -44,7 +44,6 @@ export default function LoginPage() {
     }
   }, []);
 
-  // 🟢 ฟังก์ชันสำหรับคัดลอกลิงก์ (สำหรับ Safari หรือกรณีฉุกเฉิน)
   const handleCopyLink = () => {
     const currentUrl = window.location.href;
     navigator.clipboard
@@ -67,28 +66,23 @@ export default function LoginPage() {
       });
   };
 
-  // 🟢 ฟังก์ชันสำหรับบังคับเปิดแอปเบราว์เซอร์ภายนอก (Custom URL Scheme)
   const handleOpenExternalApp = (browserType: string) => {
     const currentUrl = window.location.href;
     let targetUrl = "";
 
     if (browserType === "chrome") {
-      // Chrome ใช้ googlechromes:// สำหรับ https
       targetUrl = currentUrl
         .replace(/^https:\/\//i, "googlechromes://")
         .replace(/^http:\/\//i, "googlechrome://");
     } else if (browserType === "edge") {
-      // Edge ใช้ microsoft-edge-https://
       targetUrl = currentUrl
         .replace(/^https:\/\//i, "microsoft-edge-https://")
         .replace(/^http:\/\//i, "microsoft-edge-http://");
     } else if (browserType === "firefox") {
-      // Firefox ใช้ firefox://open-url?url=
       targetUrl = `firefox://open-url?url=${encodeURIComponent(currentUrl)}`;
     }
 
     if (targetUrl) {
-      // สั่งเปลี่ยน URL เพื่อให้ iOS สลับแอป
       window.location.href = targetUrl;
     }
   };
@@ -109,10 +103,13 @@ export default function LoginPage() {
     try {
       setIsSubmitting(true);
 
+      // ⚡ จุดเด่นที่แก้ไข: เปลี่ยนจาก .eq. เป็น .ilike. ภายในคำสั่ง .or()
+      // เพื่อสั่งให้ PostgreSQL ค้นหาโดยไม่สนใจตัวพิมพ์เล็ก-ใหญ่ ขอแค่อักษรตัวเดียวกันครับพี่ยอด
+      const cleanInput = username.trim();
       const { data: user, error } = await supabase
         .from("user_profiles")
         .select("*")
-        .or(`username.eq.${username.trim()},email.eq.${username.trim()}`)
+        .or(`username.ilike.${cleanInput},email.ilike.${cleanInput}`) // 👈 เปลี่ยนจุดนี้ครับพี่
         .eq("password_text", password.trim())
         .eq("is_active", true)
         .maybeSingle();
@@ -170,7 +167,7 @@ export default function LoginPage() {
         <form onSubmit={handleLogin} className="space-y-4 px-4">
           <div className="space-y-1">
             <label className="text-xs font-bold text-slate-600 block">
-              รหัสพนักงาน
+              รหัสพนักงาน / อีเมล
             </label>
             <div className="relative">
               <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400">
@@ -180,7 +177,7 @@ export default function LoginPage() {
                 type="text"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
-                placeholder="กรอกรหัสพนักงานของท่าน"
+                placeholder="กรอกรหัสพนักงานหรืออีเมลของท่าน"
                 className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-10 pr-4 py-3 text-sm font-medium text-slate-700 focus:outline-none focus:border-blue-500 focus:bg-white transition-all"
               />
             </div>
@@ -266,7 +263,6 @@ export default function LoginPage() {
         </p>
       </div>
 
-      {/* 🍏 หน้าต่างแจ้งเตือนสำหรับพนักงานที่ใช้ iPhone บนแอป LINE */}
       {showIosLineWarning && (
         <div className="fixed inset-0 bg-slate-900/95 backdrop-blur-md z-[9999] flex flex-col items-center p-6 text-white text-center animate-fadeIn overflow-y-auto">
           <div className="max-w-sm space-y-4 mt-8 w-full pb-8">
@@ -285,7 +281,6 @@ export default function LoginPage() {
               </p>
             </div>
 
-            {/* 🟢 ส่วนของปุ่มบังคับเปิดเบราว์เซอร์ภายนอก */}
             <div className="space-y-2 pt-2">
               <button
                 onClick={() => handleOpenExternalApp("chrome")}
@@ -319,7 +314,6 @@ export default function LoginPage() {
               <div className="flex-grow border-t border-slate-600"></div>
             </div>
 
-            {/* 🟢 ปุ่มคัดลอกลิงก์สำหรับ Safari เพราะ Apple บล็อกไม่ให้มีปุ่มบังคับเปิด Safari โดยตรง */}
             <div className="space-y-2">
               <button
                 onClick={handleCopyLink}
