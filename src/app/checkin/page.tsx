@@ -458,7 +458,6 @@ export default function CheckinPage() {
             type="file"
             ref={fileInputRef}
             accept="image/*"
-            capture="environment"
             onChange={handleImageCapture}
             className="hidden"
           />
