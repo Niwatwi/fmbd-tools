@@ -64,6 +64,7 @@ export default function CheckinPage() {
   const [userCode, setUserCode] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [companyTag, setCompanyTag] = useState("");
+  const [todayHistory, setTodayHistory] = useState<any[]>([]);
 
   const triggerCamera = () => {
     fileInputRef.current?.click();
@@ -180,6 +181,20 @@ export default function CheckinPage() {
     getSupabaseStores();
   }, []);
 
+  useEffect(() => {
+    const fetchTodayLogs = async () => {
+      const today = new Date().toISOString().split("T")[0];
+      const { data } = await supabase
+        .from("attendance_logs")
+        .select("*")
+        .eq("username", userCode)
+        .gte("created_at", `${today}T00:00:00`);
+
+      if (data) setTodayHistory(data);
+    };
+    if (userCode) fetchTodayLogs();
+  }, [userCode]);
+
   const baseStores = stores.filter((store) => {
     if (!userCode) return false;
     if (companyTag.includes("ADMIN")) return true;
@@ -238,11 +253,64 @@ export default function CheckinPage() {
 
     try {
       setIsSubmitting(true);
+
+      // 🟢 ขั้นตอนใหม่: ตรวจสอบว่าวันนี้ Check-in/out ที่ร้านนี้ไปหรือยัง?
+      const today = new Date().toISOString().split("T")[0];
+      const { data: existingLogs } = await supabase
+        .from("attendance_logs")
+        .select("id, type")
+        .eq("username", userCode)
+        .eq("store_id", parseInt(selectedStore))
+        .gte("created_at", `${today}T00:00:00`)
+        .lte("created_at", `${today}T23:59:59`);
+
+      let note = "";
+
+      // ถ้ามีข้อมูลของวันนี้แล้ว
+      if (existingLogs && existingLogs.length > 0) {
+        const { value: reason, isConfirmed } = await Swal.fire({
+          title: "ตรวจพบการบันทึกซ้ำ",
+          text: "วันนี้ท่านได้บันทึกข้อมูลที่สาขานี้ไปแล้ว หากต้องการบันทึกอีกครั้งโปรดระบุเหตุผล (เช่น เช็คสต็อกรอบดึก)",
+          input: "text",
+          inputLabel: "ระบุเหตุผล",
+          inputPlaceholder: "กรอกเหตุผลที่นี่...",
+          showCancelButton: true,
+          confirmButtonText: "ยืนยัน",
+          cancelButtonText: "ยกเลิก",
+          inputValidator: (value) => {
+            if (!value) return "กรุณาระบุเหตุผลครับ";
+          },
+        });
+
+        if (!isConfirmed) {
+          setIsSubmitting(false);
+          return; // ยกเลิกการบันทึก
+        }
+        note = reason;
+      }
+
+      // 🟢 ขั้นตอนการบันทึกปกติ (รวมเหตุผลเข้าไปด้วย)
       const publicUrl = await uploadImageToStorage(imageFile);
       if (!publicUrl) throw new Error("ไม่สามารถอัปโหลดรูปภาพได้");
 
       const currentStore = stores.find((s) => s.id === parseInt(selectedStore));
       if (!currentStore) throw new Error("ไม่พบข้อมูลร้านค้า");
+      const {
+        id,
+        store_name,
+        store_code,
+        area,
+        chanel,
+        account,
+        province,
+        region,
+        store_img,
+        store_type,
+        address,
+        phone,
+        lat,
+        lng,
+      } = currentStore;
 
       const { error } = await supabase.from("attendance_logs").insert([
         {
@@ -254,22 +322,22 @@ export default function CheckinPage() {
           longitude: deviceLng,
           image_url: publicUrl,
           created_at: new Date().toISOString(),
+          note: note,
 
-          store_id: currentStore.id,
-          store_name: currentStore.store_name,
-          store_code: currentStore.store_code,
-          store_area: currentStore.area,
-
-          store_chanel: currentStore.chanel,
-          store_account: currentStore.account,
-          store_province: currentStore.province,
-          store_region: currentStore.region,
-          store_img: currentStore.store_img,
-          store_type: currentStore.store_type,
-          store_address: currentStore.address,
-          store_phone: currentStore.phone,
-          store_lat: currentStore.lat,
-          store_lng: currentStore.lng,
+          store_id: id,
+          store_name: store_name,
+          store_code: store_code,
+          store_area: area,
+          store_chanel: chanel,
+          store_account: account,
+          store_province: province,
+          store_region: region,
+          store_img: store_img,
+          store_type: store_type,
+          store_address: address,
+          store_phone: phone,
+          store_lat: lat,
+          store_lng: lng,
         },
       ]);
 
