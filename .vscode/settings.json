@@ -1,0 +1,11 @@
+{
+    "cSpell.words": [
+        "supabase",
+        "Swal",
+        "sweetalert",
+        "warroom"
+    ],
+    "cSpell.ignoreRegExpList": [
+        "[\\u0e00-\\u0e7f]+"
+    ]
+}

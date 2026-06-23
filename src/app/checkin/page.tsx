@@ -70,6 +70,13 @@ export default function CheckinPage() {
   const [leaveType, setLeaveType] = useState("");
   const [extraReason, setExtraReason] = useState("");
 
+  // 🟢 เงื่อนไขตรวจสอบความจำเป็นในการถ่ายรูป (วันหยุดต่างๆ ไม่ต้องถ่ายรูป)
+  const isPhotoRequired = ![
+    "วันหยุด",
+    "วันหยุดชดเชยนักขัตฤกษ์",
+    "สลับวันหยุด",
+  ].includes(attendanceType);
+
   const triggerCamera = () => {
     fileInputRef.current?.click();
   };
@@ -229,7 +236,6 @@ export default function CheckinPage() {
       (!selectedAccount || store.account === selectedAccount),
   );
 
-  // 🟢 เช็คว่าประเภทการลงเวลา "ต้องเลือกร้านค้า" หรือไม่
   const isStoreRequired = [
     "วันทำงานปกติ",
     "วันทำงานนักขัตฤกษ์",
@@ -255,7 +261,6 @@ export default function CheckinPage() {
   };
 
   const handleSubmitCallVisit = async () => {
-    // 🟢 Validation วันลา/เหตุผล
     if (attendanceType === "วันลา" && !leaveType) {
       return Swal.fire({
         icon: "warning",
@@ -271,7 +276,6 @@ export default function CheckinPage() {
       });
     }
 
-    // 🟢 Validation ร้านค้า (เฉพาะวันทำงาน)
     if (isStoreRequired && !selectedStore)
       return Swal.fire({ icon: "warning", title: "กรุณาเลือกร้านค้า" });
 
@@ -286,7 +290,9 @@ export default function CheckinPage() {
         title: "ยังไม่ได้พิกัด GPS",
         text: "โปรดรอให้ระบบจับตำแหน่งสำเร็จ",
       });
-    if (!imageFile)
+
+    // 🟢 แก้ไขเงื่อนไข: ตรวจเช็คเฉพาะประเภทงานที่ระบบบังคับให้ถ่ายรูปเท่านั้น
+    if (isPhotoRequired && !imageFile)
       return Swal.fire({
         icon: "warning",
         title: "กรุณาถ่ายรูป",
@@ -301,10 +307,10 @@ export default function CheckinPage() {
         .from("attendance_logs")
         .select("id, type, attendance_type")
         .eq("username", userCode)
+        .eq("type", isCheckIn ? "check-in" : "check-out") // 🟢 แก้ไขบั๊กแยกประเภท: ล็อกเช็คอินเทียบเช็คอิน เช็คเอ้าท์เทียบเช็คเอ้าท์
         .gte("created_at", `${today}T00:00:00`)
         .lte("created_at", `${today}T23:59:59`);
 
-      // 🟢 Logic เช็คข้อมูลซ้ำ: ถ้าเป็นวันทำงานให้เช็คระดับสาขา ถ้าเป็นวันลาให้เช็คระดับวัน
       let finalAttendanceType =
         attendanceType === "วันลา" ? `วันลา - ${leaveType}` : attendanceType;
 
@@ -324,10 +330,10 @@ export default function CheckinPage() {
         const { value: reason, isConfirmed } = await Swal.fire({
           title: "ตรวจพบการบันทึกซ้ำ",
           text: isStoreRequired
-            ? "วันนี้ท่านได้บันทึกข้อมูลที่สาขานี้ไปแล้ว หากต้องการบันทึกอีกครั้งโปรดระบุเหตุผล"
-            : "วันนี้ท่านได้บันทึกการลานี้ไปแล้ว หากต้องการบันทึกซ้ำโปรดระบุเหตุผล",
+            ? "วันนี้ท่านได้บันทึกสถานะนี้ที่สาขานี้ไปแล้ว หากจำเป็นต้องเข้าซ้ำอีกครั้ง (เช่น นับสต๊อกกะดึก) โปรดระบุเหตุผล"
+            : "วันนี้ท่านได้บันทึกรายการนี้ไปแล้ว หากต้องการบันทึกซ้ำโปรดระบุเหตุผล",
           input: "text",
-          inputLabel: "ระบุเหตุผล",
+          inputLabel: "ระบุเหตุผลการเข้าซ้ำ",
           inputPlaceholder: "กรอกเหตุผลที่นี่...",
           showCancelButton: true,
           confirmButtonText: "ยืนยัน",
@@ -351,10 +357,13 @@ export default function CheckinPage() {
           : `(บันทึกซ้ำ: ${duplicateNote})`;
       }
 
-      const publicUrl = await uploadImageToStorage(imageFile);
-      if (!publicUrl) throw new Error("ไม่สามารถอัปโหลดรูปภาพได้");
+      // 🟢 ปรับโครงสร้างรูปภาพ: วันหยุดไม่ต้องอัปโหลด ปล่อยผ่านเป็น null ได้เลยครับ
+      let publicUrl = null;
+      if (imageFile) {
+        publicUrl = await uploadImageToStorage(imageFile);
+        if (!publicUrl) throw new Error("ไม่สามารถอัปโหลดรูปภาพได้");
+      }
 
-      // 🟢 จัดเตรียมข้อมูลร้านค้าที่จะ Insert ลงฐานข้อมูล
       let storeDataToInsert = {};
       if (isStoreRequired) {
         const currentStore = stores.find(
@@ -395,7 +404,6 @@ export default function CheckinPage() {
           store_lng: lng,
         };
       } else {
-        // หากเป็นวันลา ให้ใส่ข้อมูล Dummy ไม่ให้หน้า Report พัง
         storeDataToInsert = {
           store_id: null,
           store_name: finalAttendanceType,
@@ -421,7 +429,7 @@ export default function CheckinPage() {
           created_at: new Date().toISOString(),
           attendance_type: finalAttendanceType,
           note: finalNote,
-          ...storeDataToInsert, // 🟢 โยนชุดข้อมูลร้านค้า (หรือค่าว่าง) ลงไปพร้อมกัน
+          ...storeDataToInsert,
         },
       ]);
 
@@ -571,7 +579,6 @@ export default function CheckinPage() {
           )}
         </div>
 
-        {/* 🟢 ซ่อนกล่องเลือกร้านค้า ถ้าเป็นวันหยุดหรือวันลา */}
         {isStoreRequired && (
           <div className="bg-white rounded-2xl p-4 shadow-sm space-y-3 animate-fadeIn">
             <div className="grid grid-cols-2 gap-3">
@@ -632,7 +639,6 @@ export default function CheckinPage() {
           </div>
         )}
 
-        {/* 🟢 ปรับเปลี่ยนปุ่มกด: ถ้าเป็นวันลา ให้มีแค่ปุ่มเดียวใหญ่ๆ */}
         <div
           className={`grid ${isStoreRequired ? "grid-cols-2" : "grid-cols-1"} gap-3`}
         >
@@ -663,40 +669,42 @@ export default function CheckinPage() {
           )}
         </div>
 
-        {/* Photo Upload */}
-        <div className="bg-white rounded-2xl border border-slate-100 p-4">
-          <input
-            type="file"
-            ref={fileInputRef}
-            accept="image/*"
-            onChange={handleImageCapture}
-            className="hidden"
-          />
-          <div
-            onClick={triggerCamera}
-            className="border-2 border-dashed h-40 flex flex-col items-center justify-center cursor-pointer bg-slate-50/50 rounded-xl hover:border-blue-400 overflow-hidden transition-all"
-          >
-            {imagePreview ? (
-              <img
-                src={imagePreview}
-                className="h-full w-full object-contain"
-                alt="preview"
-              />
-            ) : (
-              <>
-                <Camera className="w-8 h-8 text-slate-400" />
-                <span className="text-xs font-bold text-slate-600 mt-2">
-                  กดถ่ายรูปภาพ หรือ เลือกรูปจากคลังภาพหน้างาน
-                </span>
-                {!isStoreRequired && (
-                  <span className="text-[10px] text-orange-500 font-bold mt-1">
-                    (หากเป็นวันลา กรุณาถ่ายใบรับรองแพทย์หรือหลักฐาน)
+        {/* 🟢 ซ่อนกล่อง Photo Upload โดยอัตโนมัติหากเลือกประเภทเป็น วันหยุด ต่างๆ */}
+        {isPhotoRequired && (
+          <div className="bg-white rounded-2xl border border-slate-100 p-4">
+            <input
+              type="file"
+              ref={fileInputRef}
+              accept="image/*"
+              onChange={handleImageCapture}
+              className="hidden"
+            />
+            <div
+              onClick={triggerCamera}
+              className="border-2 border-dashed h-40 flex flex-col items-center justify-center cursor-pointer bg-slate-50/50 rounded-xl hover:border-blue-400 overflow-hidden transition-all"
+            >
+              {imagePreview ? (
+                <img
+                  src={imagePreview}
+                  className="h-full w-full object-contain"
+                  alt="preview"
+                />
+              ) : (
+                <>
+                  <Camera className="w-8 h-8 text-slate-400" />
+                  <span className="text-xs font-bold text-slate-600 mt-2">
+                    กดถ่ายรูปภาพ หรือ เลือกรูปจากคลังภาพหน้างาน
                   </span>
-                )}
-              </>
-            )}
+                  {attendanceType === "วันลา" && (
+                    <span className="text-[10px] text-orange-500 font-bold mt-1">
+                      (หากเป็นวันลา กรุณาถ่ายใบรับรองแพทย์หรือหลักฐาน)
+                    </span>
+                  )}
+                </>
+              )}
+            </div>
           </div>
-        </div>
+        )}
 
         {/* GPS Info */}
         <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4 space-y-2">

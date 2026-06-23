@@ -45,9 +45,11 @@ import {
   Globe,
   UserCheck,
   FileText,
-  Mail,
-  Phone,
+  MessageSquare,
+  Clock,
+  User,
 } from "lucide-react";
+import Swal from "sweetalert2";
 
 interface ReportData {
   id: string;
@@ -95,11 +97,39 @@ interface SupabaseRow {
   category?: string;
 }
 
+interface ComputedMetrics {
+  totalAllReasonsCount: number;
+  totalOOSAccounts: number;
+  totalUniqueVisits: number;
+  highestAccount: string;
+  lowestAccount: string;
+  resolvedStores: number;
+  pendingStores: number;
+  topOOSItem: string;
+  oosRatio: string;
+  trendData: any[];
+  barChartDataset: any[];
+  areaData: any[];
+}
+
+interface CommentRow {
+  id: number;
+  created_at: string;
+  store_name: string;
+  customer_name: string;
+  comment_text: string;
+  auditor_reply: string | null;
+  admin_reply: string | null;
+  status: "pending" | "auditor_replied" | "admin_intervened";
+  company: string;
+}
+
 const TARGET_OOS_REASONS = [
   "สินค้าขาดหน้าร้าน มีสต๊อก",
   "สินค้าขาด ไม่มีออเดอร์",
   "สินค้าขาด สต๊อกลม",
   "สินค้าขาด มีออเดอร์",
+  "ไม่มีสินค้าที่ OOS",
 ];
 
 const COLORS = ["#2563eb", "#0d9488", "#ea580c", "#84cc16", "#6366f1"];
@@ -112,17 +142,28 @@ export default function CompleteWarRoomPage() {
   const [isReady, setIsReady] = useState(false);
   const [time, setTime] = useState<string>("");
 
-  // --- แผง State ฟิลเตอร์หลักของห้องควบคุม ---
+  const [comments, setComments] = useState<CommentRow[]>([]);
+  const [commentLoading, setCommentLoading] = useState(true);
+  const [replyTexts, setReplyTexts] = useState<Record<number, string>>({});
+  const [submittingCommentId, setSubmittingCommentId] = useState<number | null>(
+    null,
+  );
+  const [selectedPreviewImage, setSelectedPreviewImage] = useState<
+    string | null
+  >(null);
+
+  // --- แผง State ฟิลเตอร์หลัก ---
   const [activeCustomerTab, setActiveCustomerTab] = useState<string>("ALL");
   const [filterDate, setFilterDate] = useState<string>("ALL");
   const [filterRegion, setFilterRegion] = useState<string>("ALL");
   const [filterArea, setFilterArea] = useState<string>("ALL");
-  const [filterChanel, setFilterChanel] = useState<string>("ALL");
+  const [filterChanel, setFilterChanel] = useState<string>("ALL"); // 🟢 ปรับตัวแปรสะกดให้ตรงตารางหลังบ้าน
   const [filterAccount, setFilterAccount] = useState<string>("ALL");
   const [filterAuditorType, setFilterAuditorType] = useState<string>("ALL");
   const [filterReason, setFilterReason] = useState<string>("ALL");
   const [filterAuditor, setFilterAuditor] = useState<string>("ALL");
   const [searchQuery, setSearchQuery] = useState<string>("");
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -137,13 +178,6 @@ export default function CompleteWarRoomPage() {
 
     const initTimeout = setTimeout(() => {
       startTransition(() => {
-        setTime(
-          new Date().toLocaleTimeString("th-TH", {
-            hour: "2-digit",
-            minute: "2-digit",
-            second: "2-digit",
-          }),
-        );
         setMounted(true);
         setIsReady(true);
       });
@@ -155,22 +189,48 @@ export default function CompleteWarRoomPage() {
     };
   }, []);
 
-  const loadData = useCallback(async (isRefresh = false) => {
-    if (isRefresh) {
-      startTransition(() => {
-        setLoading(true);
-      });
+  // ดึงข้อความทวงถามจากบอร์ดผู้บริหาร
+  useEffect(() => {
+    async function fetchActiveComments() {
+      setCommentLoading(true);
+      const { data, error } = await supabase
+        .from("oos_comments")
+        .select("*")
+        .neq("status", "admin_intervened")
+        .order("id", { ascending: false });
+
+      if (!error && data) setComments(data as CommentRow[]);
+      setCommentLoading(false);
     }
+    fetchActiveComments();
+  }, [refreshTrigger]);
+
+  // ฟังก์ชันโหลดข้อมูลหลักพร้อมระบบกระตุ้น Cache หลังบ้าน
+  const loadData = useCallback(async (isRefresh = false) => {
+    startTransition(() => {
+      setLoading(true);
+    });
+
     try {
+      // 🟢 จุดแก้ไขที่ 2: ถ้าเป็นการกดรีเฟรช ให้สั่งยิงกระตุ้นอัปเดตข้อมูลเข้า Cache Table ก่อนเลยครับ
+      if (isRefresh) {
+        const { error: rpcError } = await supabase.rpc("refresh_warroom_data");
+        if (rpcError) console.error("RPC Sync Error:", rpcError);
+        setRefreshTrigger((p) => p + 1);
+      }
+
       let allRawData: SupabaseRow[] = [];
       let keepFetching = true;
       let start = 0;
-      const step = 5000;
+      const step = 1000;
 
+      // 🟢 จุดแก้ไขที่ 3: ปรับแก้เงื่อนไขหลุดลูป ป้องกันอาการ Infinite Loop หน้าเว็บค้าง
       while (keepFetching) {
         const { data, error } = await supabase
           .from("vw_executive_warroom")
-          .select("*")
+          .select(
+            "id,created_at,company,region,area,chanel,account,store_name,descriptions,oos_reason,province,auditor,auditor_type,brand,category,price_tag_image,shelf_image,cma_image,date_key,visit_id,barcode",
+          )
           .range(start, start + step - 1);
 
         if (error) throw error;
@@ -188,6 +248,7 @@ export default function CompleteWarRoomPage() {
       }
 
       if (allRawData.length > 0) {
+        console.log("🔥 พบข้อมูลดิบจำนวน:", allRawData.length);
         const formatted: ReportData[] = allRawData.map((item) => {
           const areaName = item.area || "ไม่ระบุ";
           const provinceName = item.province || "ไม่ระบุ";
@@ -209,16 +270,16 @@ export default function CompleteWarRoomPage() {
           return {
             id: item.id || crypto.randomUUID(),
             created_at: dateString,
-            source_company: item.company || "ไม่ระบุ",
-            region: item.region || derivedRegion,
+            source_company: item.company || "ไม่ระบุ", // 🟢 ดึงจากคอลัมน์ 'company'
+            region: item.region || "UPC",
             area: areaName,
             chanel: (item.chanel || "MT").toUpperCase(),
             account: item.account || "ไม่ระบุ",
             store_name: storeName,
             descriptions: item.descriptions || item.barcode || "ไม่ระบุ",
             oos_reason: item.oos_reason || "",
-            action_plan: item.action_plan || null,
-            province: provinceName,
+            action_plan: null, // 🟢 เนื่องจากไม่มีคอลัมน์ action_plan ใน DB ให้ใส่เป็น null ไว้ก่อนครับ
+            province: item.province || "ไม่ระบุ",
             brand: item.brand || "",
             category: item.category || "",
             price_image_url: item.price_tag_image || null,
@@ -233,6 +294,11 @@ export default function CompleteWarRoomPage() {
         startTransition(() => {
           setReports(formatted);
         });
+      } else {
+        startTransition(() => {
+          console.log("❌ ไม่พบข้อมูลเลยจากฐานข้อมูล");
+          setReports([]);
+        });
       }
     } catch (e) {
       console.error("Fetch error in Central War Room:", e);
@@ -246,6 +312,40 @@ export default function CompleteWarRoomPage() {
   useEffect(() => {
     loadData(false);
   }, [loadData]);
+
+  const handleAuditorSendReply = async (commentId: number) => {
+    const text = replyTexts[commentId]?.trim();
+    if (!text) return;
+
+    setSubmittingCommentId(commentId);
+    try {
+      const { error } = await supabase
+        .from("oos_comments")
+        .update({
+          auditor_reply: text,
+          status: "auditor_replied",
+        })
+        .eq("id", commentId);
+
+      if (error) throw error;
+
+      Swal.fire({
+        toast: true,
+        position: "top-end",
+        icon: "success",
+        title: "ส่งคำชี้แจงเข้าระบบฝั่งผู้บริหารสำเร็จ",
+        showConfirmButton: false,
+        timer: 2000,
+      });
+
+      setReplyTexts((prev) => ({ ...prev, [commentId]: "" }));
+      setRefreshTrigger((p) => p + 1);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setSubmittingCommentId(null);
+    }
+  };
 
   // --- Dropdown Options Memoized ---
   const dateOptions = useMemo(
@@ -324,7 +424,7 @@ export default function CompleteWarRoomPage() {
       if (filterDate !== "ALL" && r.created_at !== filterDate) return false;
       if (filterRegion !== "ALL" && r.region !== filterRegion) return false;
       if (filterArea !== "ALL" && r.area !== filterArea) return false;
-      if (filterChanel !== "ALL" && r.chanel !== filterChanel) return false;
+      if (filterChanel !== "ALL" && r.chanel !== filterChanel) return false; // 🟢 ปรับตัวแปรสะกด
       if (filterAccount !== "ALL" && r.account !== filterAccount) return false;
       if (filterAuditorType !== "ALL" && r.auditor_type !== filterAuditorType)
         return false;
@@ -354,10 +454,15 @@ export default function CompleteWarRoomPage() {
     searchQuery,
   ]);
 
-  const computedMetrics = useMemo(() => {
+  const computedMetrics = useMemo((): ComputedMetrics => {
     const matchedOOS = filteredReports.filter((r: ReportData) =>
       TARGET_OOS_REASONS.includes(r.oos_reason),
     );
+
+    // 🟢 เพิ่ม Log นี้เพื่อดูว่าจริงๆ แล้วมีข้อมูลเข้ามาเท่าไหร่
+    console.log("Filtered Reports Length:", filteredReports.length);
+    console.log("Matched OOS Length:", matchedOOS.length);
+
     const uniqueVisitsCount = new Set(
       filteredReports.map((r: ReportData) => r.visit_id_key),
     ).size;
@@ -517,7 +622,6 @@ export default function CompleteWarRoomPage() {
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-800 pb-6 font-sans">
-      {/* 🔮 STICKY HEADER */}
       <header className="sticky top-0 z-50 bg-slate-900 px-6 py-4 text-white shadow-lg">
         <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
           <div className="flex items-center gap-3">
@@ -556,7 +660,6 @@ export default function CompleteWarRoomPage() {
           </div>
         </div>
 
-        {/* Action Toolbar */}
         <div className="max-w-7xl mx-auto flex flex-wrap gap-2 border-t border-white/10 pt-3 mt-3">
           <button
             onClick={handleExportCSV}
@@ -586,7 +689,90 @@ export default function CompleteWarRoomPage() {
       </header>
 
       <main className="max-w-7xl mx-auto px-6 mt-6 space-y-6">
-        {/* 🏷️ CUSTOMER TABS */}
+        {/* Executive Comments Center */}
+        <section className="bg-white border border-red-200/80 rounded-2xl shadow-sm p-5 space-y-4">
+          <div className="flex items-center gap-2 border-b border-slate-100 pb-2.5">
+            <MessageSquare className="w-4 h-4 text-red-500 animate-bounce" />
+            <h3 className="text-xs font-black text-slate-800 uppercase tracking-wider">
+              ศูนย์รับเรื่องด่วนจากบอร์ดบริหาร (Executive Comments Live)
+            </h3>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-h-72 overflow-y-auto pr-1">
+            {commentLoading ? (
+              <div className="col-span-2 text-center py-4 text-xs font-bold text-slate-400">
+                กำลังดึงข้อความร้องเรียนสด...
+              </div>
+            ) : comments.length === 0 ? (
+              <div className="col-span-2 text-center py-6 text-xs font-bold text-slate-400 bg-slate-50 rounded-xl border border-dashed">
+                🎉 สัญญาณห้องควบคุมนิ่งดี ไม่มีข้อความทวงถามค้างอยู่ครับ
+              </div>
+            ) : (
+              comments.map((comment) => (
+                <div
+                  key={comment.id}
+                  className="bg-slate-50 border rounded-xl p-3 text-xs space-y-2 flex flex-col justify-between"
+                >
+                  <div>
+                    <div className="flex justify-between items-center">
+                      <span className="font-black text-slate-900 flex items-center gap-1">
+                        📍 {comment.store_name}
+                      </span>
+                      <span
+                        className={`px-2 py-0.5 rounded text-[8px] font-black text-white ${comment.status === "pending" ? "bg-amber-500 animate-pulse" : "bg-blue-600"}`}
+                      >
+                        {comment.status === "pending"
+                          ? "⏳ บอร์ดบริหารทวงถาม"
+                          : "🟢 ตอบกลับแล้ว"}
+                      </span>
+                    </div>
+                    <div className="text-[10px] text-slate-400 font-bold mt-0.5">
+                      ค่าย:{" "}
+                      <span className="text-blue-600">{comment.company}</span> |
+                      โดยคุณ: {comment.customer_name}
+                    </div>
+                    <p className="bg-white p-2 rounded-lg border border-slate-100 font-semibold mt-2 text-slate-700">
+                      {comment.comment_text}
+                    </p>
+                  </div>
+
+                  <div className="flex gap-2 pt-1">
+                    <input
+                      type="text"
+                      placeholder={
+                        comment.auditor_reply
+                          ? `เดิม: ${comment.auditor_reply}`
+                          : "พิมพ์คำชี้แจงส่งกลับบอร์ดผู้บริหาร..."
+                      }
+                      value={replyTexts[comment.id] || ""}
+                      onChange={(e) =>
+                        setReplyTexts({
+                          ...replyTexts,
+                          [comment.id]: e.target.value,
+                        })
+                      }
+                      className="w-full border rounded-lg p-1.5 text-xs outline-none focus:border-blue-500 bg-white font-medium"
+                    />
+                    <button
+                      onClick={() => handleAuditorSendReply(comment.id)}
+                      disabled={
+                        submittingCommentId === comment.id ||
+                        !replyTexts[comment.id]?.trim()
+                      }
+                      className="bg-slate-900 text-white font-black px-3 rounded-lg hover:bg-slate-800 text-[11px] shrink-0 disabled:bg-slate-200 shadow-xs"
+                    >
+                      {submittingCommentId === comment.id
+                        ? "ส่ง..."
+                        : "ส่งชี้แจง"}
+                    </button>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </section>
+
+        {/* CUSTOMER TABS */}
         <div className="flex flex-wrap gap-1 p-1 bg-slate-200/60 rounded-xl max-w-fit shadow-inner">
           <button
             type="button"
@@ -607,7 +793,7 @@ export default function CompleteWarRoomPage() {
           ))}
         </div>
 
-        {/* 🎛️ FILTER PANEL */}
+        {/* FILTER PANEL */}
         <section className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200/80 space-y-4">
           <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-3 border-b border-slate-100 pb-3">
             <div className="flex items-center gap-2">
@@ -777,18 +963,18 @@ export default function CompleteWarRoomPage() {
           </div>
         </section>
 
-        {/* 📉 KPI CARDS GRID */}
+        {/* KPI CARDS GRID */}
         <section className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-3.5">
           <div className="bg-slate-900 p-4 rounded-2xl text-white shadow-sm border border-slate-950 text-center">
-            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">
-              📦 Total Shortages
+            <span className="text-[9px] font-bold text-slate-400 tracking-wider block">
+              Total Shortages
             </span>
             <p className="text-2xl font-black font-mono mt-1 text-rose-500">
               {computedMetrics.totalAllReasonsCount}
             </p>
           </div>
           <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm text-center">
-            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">
+            <span className="text-[9px] font-bold text-slate-400 tracking-wider block">
               Visit Frequency
             </span>
             <p className="text-xl font-black text-blue-600 font-mono mt-1">
@@ -799,7 +985,7 @@ export default function CompleteWarRoomPage() {
             </p>
           </div>
           <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm text-center">
-            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">
+            <span className="text-[9px] font-bold text-slate-400 tracking-wider block">
               Account OOS
             </span>
             <p className="text-xl font-black text-slate-800 font-mono mt-1">
@@ -807,7 +993,7 @@ export default function CompleteWarRoomPage() {
             </p>
           </div>
           <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm text-center">
-            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">
+            <span className="text-[9px] font-bold text-slate-400 tracking-wider block">
               Highest Crisis
             </span>
             <p
@@ -818,7 +1004,7 @@ export default function CompleteWarRoomPage() {
             </p>
           </div>
           <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm text-center">
-            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">
+            <span className="text-[9px] font-bold text-slate-400 tracking-wider block">
               Edit completed
             </span>
             <p className="text-xl font-black text-emerald-600 font-mono mt-1">
@@ -826,7 +1012,7 @@ export default function CompleteWarRoomPage() {
             </p>
           </div>
           <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm text-center">
-            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">
+            <span className="text-[9px] font-bold text-slate-400 tracking-wider block">
               Pending
             </span>
             <p className="text-xl font-black text-amber-500 font-mono mt-1">
@@ -834,7 +1020,7 @@ export default function CompleteWarRoomPage() {
             </p>
           </div>
           <div className="bg-purple-50 p-4 rounded-2xl border border-purple-200 shadow-sm text-center">
-            <span className="text-[9px] font-black text-purple-600 uppercase tracking-wider block">
+            <span className="text-[9px] font-black text-purple-600 tracking-wider block">
               📊 % Accumulated
             </span>
             <p className="text-xl font-black text-purple-700 font-mono mt-1">
@@ -842,7 +1028,7 @@ export default function CompleteWarRoomPage() {
             </p>
           </div>
           <div className="bg-blue-950 p-4 rounded-2xl shadow-sm text-center text-white border border-blue-900">
-            <span className="text-[9px] font-bold text-blue-300 uppercase tracking-wider block">
+            <span className="text-[9px] font-bold text-blue-300 tracking-wider block">
               🔥 Most Absent
             </span>
             <p
@@ -854,7 +1040,7 @@ export default function CompleteWarRoomPage() {
           </div>
         </section>
 
-        {/* 📊 VISUALIZATION CHARTS SECTION */}
+        {/* VISUALIZATION CHARTS SECTION */}
         <section className="space-y-6">
           {isReady && (
             <>
@@ -863,13 +1049,12 @@ export default function CompleteWarRoomPage() {
                 <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 min-w-0">
                   <h3 className="text-xs font-black text-blue-600 uppercase tracking-wide mb-4 flex items-center gap-1.5">
                     <BarChart3 className="w-4 h-4" /> Top 5 Account OOS
-                    (วิเคราะห์กลุ่มห้างขาดสต๊อกสูงสุด)
                   </h3>
-                  <div className="w-full h-64">
+                  <div className="w-full h-[300px]">
                     <ResponsiveContainer
                       width="100%"
                       height="100%"
-                      debounce={100}
+                      aspect={1.5}
                     >
                       <BarChart
                         data={computedMetrics.barChartDataset}
@@ -899,6 +1084,7 @@ export default function CompleteWarRoomPage() {
                         />
                         <Bar
                           dataKey="จำนวน OOS"
+                          name="จำนวน OOS"
                           fill="#2563eb"
                           radius={[6, 6, 0, 0]}
                           barSize={28}
@@ -912,13 +1098,12 @@ export default function CompleteWarRoomPage() {
                 <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 min-w-0">
                   <h3 className="text-xs font-black text-blue-600 uppercase tracking-wide mb-4 flex items-center gap-1.5">
                     <TrendingUp className="w-4 h-4" /> Daily OOS Trend
-                    (ดัชนีแนวโน้มอัตราสินค้าขาดรายวัน)
                   </h3>
-                  <div className="w-full h-64">
+                  <div className="w-full h-[300px]">
                     <ResponsiveContainer
                       width="100%"
                       height="100%"
-                      debounce={100}
+                      aspect={1.5}
                     >
                       <LineChart
                         data={computedMetrics.trendData}
@@ -963,14 +1148,13 @@ export default function CompleteWarRoomPage() {
               <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
                 <h3 className="text-xs font-black text-blue-600 uppercase tracking-wide mb-4 flex items-center gap-1.5">
                   <MapPin className="w-4 h-4" /> Proportion of OOS by Area
-                  (สัดส่วนความหนาแน่นปัญหาสินค้าขาดจำแนกตามเขต)
                 </h3>
                 <div className="flex flex-col md:flex-row items-center justify-center gap-6">
-                  <div className="w-full h-60 md:w-1/3">
+                  <div className="w-full h-[300px]">
                     <ResponsiveContainer
                       width="100%"
                       height="100%"
-                      debounce={100}
+                      aspect={1.5}
                     >
                       <PieChart>
                         <Pie
@@ -1020,7 +1204,7 @@ export default function CompleteWarRoomPage() {
           )}
         </section>
 
-        {/* 🗂️ STICKY TABLE RECORD SECTION */}
+        {/* Raw Report Record Table */}
         <section className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
           <div className="p-4 bg-slate-900 text-white flex justify-between items-center">
             <h3 className="text-xs font-black uppercase tracking-wider flex items-center gap-1.5">
@@ -1032,8 +1216,7 @@ export default function CompleteWarRoomPage() {
             </span>
           </div>
 
-          {/* แถบเลื่อนล็อคหัวตารางอัจฉริยะ (Custom Slider Wrapper) */}
-          <div className="overflow-x-auto max-h-[500px] overflow-y-auto scrollbar-thin scrollbar-thumb-slate-300 scrollbar-track-transparent">
+          <div className="overflow-x-auto max-h-[500px] overflow-y-auto scrollbar-thin">
             <table className="w-full text-left border-collapse text-[11px]">
               <thead className="sticky top-0 bg-slate-100 z-10 text-slate-500 border-b border-slate-200 font-black shadow-xs">
                 <tr>
@@ -1041,7 +1224,7 @@ export default function CompleteWarRoomPage() {
                   <th className="p-3.5">Company</th>
                   <th className="p-3.5">Region</th>
                   <th className="p-3.5">Area</th>
-                  <th className="p-3.5 text-center">Chanel</th>
+                  <th className="p-3.5 text-center">Channel</th>
                   <th className="p-3.5">Type</th>
                   <th className="p-3.5">Auditor</th>
                   <th className="p-3.5">Account</th>
@@ -1121,8 +1304,6 @@ export default function CompleteWarRoomPage() {
                       <td className="p-3 text-slate-500 max-w-[140px] truncate italic font-medium">
                         {report.action_plan || "-"}
                       </td>
-
-                      {/* 🖼️ ภาพหลักฐานแบบกรอบมนพรีpreview ขยายและกดคลิกเปิดวาร์ปหน้าต่างใหม่ได้ครบที่เดียว */}
                       <td className="p-3">
                         <div className="flex justify-center items-center gap-1.5">
                           {report.price_image_url ? (
@@ -1130,16 +1311,13 @@ export default function CompleteWarRoomPage() {
                               src={report.price_image_url}
                               alt="Price"
                               onClick={() =>
-                                window.open(
-                                  report.price_image_url || undefined,
-                                  "_blank",
-                                )
+                                setSelectedPreviewImage(report.price_image_url)
                               }
-                              className="h-10 w-10 object-cover rounded-lg border border-slate-200 shadow-sm hover:scale-110 active:scale-95 transition-all cursor-pointer"
-                              title="คลิกดูรูปป้ายราคาใหญ่"
+                              className="h-10 w-10 object-cover rounded-lg border border-slate-200 shadow-xs hover:scale-110 transition-all cursor-pointer"
+                              title="คลิกเปิดดูรูปป้ายราคา"
                             />
                           ) : (
-                            <div className="h-10 w-10 bg-slate-50 rounded-lg border border-dashed border-slate-200 flex items-center justify-center text-[8px] text-slate-300 font-normal">
+                            <div className="h-10 w-10 bg-slate-50 rounded-lg border border-dashed border-slate-200 flex items-center justify-center text-[8px] text-slate-300">
                               No Tag
                             </div>
                           )}
@@ -1149,16 +1327,13 @@ export default function CompleteWarRoomPage() {
                               src={report.shelf_image_url}
                               alt="Shelf"
                               onClick={() =>
-                                window.open(
-                                  report.shelf_image_url || undefined,
-                                  "_blank",
-                                )
+                                setSelectedPreviewImage(report.shelf_image_url)
                               }
-                              className="h-10 w-10 object-cover rounded-lg border border-slate-200 shadow-sm hover:scale-110 active:scale-95 transition-all cursor-pointer"
-                              title="คลิกดูรูปชั้นวางใหญ่"
+                              className="h-10 w-10 object-cover rounded-lg border border-slate-200 shadow-xs hover:scale-110 transition-all cursor-pointer"
+                              title="คลิกเปิดดูรูปชั้นวาง"
                             />
                           ) : (
-                            <div className="h-10 w-10 bg-slate-50 rounded-lg border border-dashed border-slate-200 flex items-center justify-center text-[8px] text-slate-300 font-normal">
+                            <div className="h-10 w-10 bg-slate-50 rounded-lg border border-dashed border-slate-200 flex items-center justify-center text-[8px] text-slate-300">
                               No Shelf
                             </div>
                           )}
@@ -1168,16 +1343,13 @@ export default function CompleteWarRoomPage() {
                               src={report.cma_image_url}
                               alt="CMA"
                               onClick={() =>
-                                window.open(
-                                  report.cma_image_url || undefined,
-                                  "_blank",
-                                )
+                                setSelectedPreviewImage(report.cma_image_url)
                               }
-                              className="h-10 w-10 object-cover rounded-lg border border-slate-200 shadow-sm hover:scale-110 active:scale-95 transition-all cursor-pointer"
-                              title="คลิกดูรูป CMA ใหญ่"
+                              className="h-10 w-10 object-cover rounded-lg border border-slate-200 shadow-xs hover:scale-110 transition-all cursor-pointer"
+                              title="คลิกเปิดดูรูป CMA"
                             />
                           ) : (
-                            <div className="h-10 w-10 bg-slate-50 rounded-lg border border-dashed border-slate-200 flex items-center justify-center text-[8px] text-slate-300 font-normal">
+                            <div className="h-10 w-10 bg-slate-50 rounded-lg border border-dashed border-slate-200 flex items-center justify-center text-[8px] text-slate-300">
                               No CMA
                             </div>
                           )}
@@ -1199,7 +1371,31 @@ export default function CompleteWarRoomPage() {
         </p>
       )}
 
-      {/* 🟢 ปุ่มวาร์ปกลับหน้าคอนโซลหลักอย่างราบรื่นตามธีม fmbd-tools */}
+      {/* Modal Viewer Popup */}
+      {selectedPreviewImage && (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 p-4"
+          onClick={() => setSelectedPreviewImage(null)}
+        >
+          <div
+            className="relative max-w-4xl max-h-[90vh] bg-white p-2 rounded-2xl shadow-2xl overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              className="absolute top-4 right-4 bg-black/60 hover:bg-black text-white font-bold w-9 h-9 rounded-full flex items-center justify-center text-sm transition shadow-md z-10 cursor-pointer"
+              onClick={() => setSelectedPreviewImage(null)}
+            >
+              ✕
+            </button>
+            <img
+              src={selectedPreviewImage}
+              alt="Warroom Evidence Detail"
+              className="max-w-full max-h-[82vh] object-contain rounded-xl"
+            />
+          </div>
+        </div>
+      )}
+
       <div className="mt-8 flex justify-center">
         <button
           onClick={() => router.push("/")}
@@ -1210,7 +1406,6 @@ export default function CompleteWarRoomPage() {
         </button>
       </div>
 
-      {/* 👑 PROFESSIONAL FOOTER */}
       <footer className="max-w-7xl mx-auto mt-12 border-t border-slate-200 bg-white py-6 px-6 rounded-2xl text-center text-[10px] text-slate-400 font-medium space-y-1.5 shadow-sm">
         <p className="font-black text-slate-900 text-xs tracking-widest uppercase">
           by FMBD CONTROLLER

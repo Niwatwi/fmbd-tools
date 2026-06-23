@@ -69,35 +69,30 @@ interface ReportRow {
   rating?: number;
   comments?: string;
   admin_reply?: string | null;
-  // ตัวแปรแยกประเภทแหล่งที่มาข้อมูล
   dataType: "oos" | "price";
 }
 
 export default function CombinedCustomerCommentPortal() {
   const router = useRouter();
 
-  // --- 📊 Joint Data Management States ---
+  // --- 📊 State Management ---
   const [rawReports, setRawReports] = useState<ReportRow[]>([]);
   const [feedbacks, setFeedbacks] = useState<any[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [activeTab, setActiveTab] = useState<"oos" | "price" | "comments">(
     "oos",
   );
-
-  // --- 🏢 ปุ่มเลือกดูลูกค้า (Company Selection State) ---
   const [selectedCompany, setSelectedCompany] = useState<string>("ALL");
+  const [isChartReady, setIsChartReady] = useState(false);
 
-  // --- 🎛️ Multi-Filter Controls ---
+  // --- 🎛️ Filter Controls ---
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [filterDate, setFilterDate] = useState<string>("ALL");
   const [filterArea, setFilterArea] = useState<string>("ALL");
   const [filterAccount, setFilterAccount] = useState<string>("ALL");
   const [filterReason, setFilterReason] = useState<string>("ALL");
-
-  // --- 💬 Admin Reply Input States ---
   const [replyTexts, setReplyTexts] = useState<Record<string, string>>({});
 
-  // 🔄 ฟังก์ชันดึงตาราง Feedback กล่องรับความคิดเห็น
   const fetchFeedbacks = async () => {
     try {
       const { data, error } = await supabase
@@ -110,27 +105,28 @@ export default function CombinedCustomerCommentPortal() {
     }
   };
 
-  // 🔄 ⚡ ฟังก์ชันโหลดข้อมูลแบบควบรวมคู่ขนาน (OOS View + Price Surveys Table)
+  // 🔄 ปรับปรุงฟังก์ชันโหลดข้อมูลใน src/app/customer-comment/page.tsx
   const loadPortalData = useCallback(async () => {
     setLoading(true);
     try {
-      // 1. ดึงข้อมูลฝั่งสินค้าขาดเชลฟ์ OOS จาก View กลาง
+      // 1. จำกัดให้ดึงข้อมูลฝั่ง OOS ล่าสุดแค่ 200 รายการพอครับ (ไม่ต้องสาดมาหมด 1,800 แถวในทีเดียว)
       const { data: oosData, error: oosError } = await supabase
         .from("vw_executive_warroom")
         .select("*")
-        .order("date_key", { ascending: false });
+        .order("date_key", { ascending: false })
+        .limit(200); // 🟢 เพิ่ม Limit เพื่อลดโหลดของ CPU ตัว Server ครับ
 
       if (oosError) throw oosError;
 
-      // 2. ดึงข้อมูลราคาขายจริงโปรโมชันหน้าร้านตรงๆ จากตารางหลัก price_surveys
+      // 2. ฝั่งราคาก็จำกัดให้โชว์รายการอัปเดตล่าสุดพอประมาณครับ
       const { data: priceData, error: priceError } = await supabase
         .from("price_surveys")
         .select("*")
-        .order("created_at", { ascending: false });
+        .order("created_at", { ascending: false })
+        .limit(200); // 🟢 เพิ่ม Limit ตรงนี้ด้วยครับ
 
       if (priceError) throw priceError;
 
-      // 3. ปรับโครงสร้างข้อมูล (Normalize) ติดป้ายกำกับระบุแหล่งที่มาให้ระบบฟิลเตอร์แยกแท็บได้ถูกต้อง
       const normalizedOos = (oosData || []).map((item: any) => ({
         ...item,
         dataType: "oos" as const,
@@ -138,12 +134,12 @@ export default function CombinedCustomerCommentPortal() {
         account_name: item.account_name || item.account || "ไม่ระบุ",
       }));
 
-      // แมปไอดีค่ายลูกค้า: ไอดี 1 = RVP, ไอดี 2 = Loxley, ไอดี 3 = Kewpie
       const companyMap: Record<string, string> = {
         "1": "RVP",
         "2": "LOXLEY",
         "3": "KEWPIE",
       };
+
       const normalizedPrice = (priceData || []).map((item: any) => {
         const compTag = companyMap[String(item.customer_id)] || "RVP";
         return {
@@ -152,15 +148,13 @@ export default function CombinedCustomerCommentPortal() {
           company: compTag,
           account_name: item.account || "ไม่ระบุ",
           date_key: item.created_at ? item.created_at.slice(0, 10) : "",
-          oos_reason: "ไม่มีสินค้าที่ OOS", // ฝั่งราคาให้เซ็ตค่าไว้เพื่อไม่ให้หลุดไปโผล่แท็บแจ้งเตือนของขาด
+          oos_reason: "ไม่มีสินค้าที่ OOS",
           descriptions: item.descriptions || "-",
           auditor: item.auditor || "ทีมสำรวจ",
         };
       });
 
-      // รวมร่างข้อมูลสองตารางสาดเข้าสู่ State กลางพร้อมกัน
       setRawReports([...normalizedOos, ...normalizedPrice]);
-
       await fetchFeedbacks();
     } catch (err) {
       console.error("Portal Fetch System Error:", err);
@@ -173,7 +167,6 @@ export default function CombinedCustomerCommentPortal() {
     loadPortalData();
   }, [loadPortalData]);
 
-  // --- 📦 รวมมิติข้อมูลฟีดแบ็กดาวรีวิวเข้าตารางกลางรายแถว ---
   const comprehensiveReports = useMemo(() => {
     return rawReports.map((report) => {
       const foundFeedback = feedbacks.find(
@@ -194,7 +187,6 @@ export default function CombinedCustomerCommentPortal() {
     });
   }, [rawReports, feedbacks]);
 
-  // --- 🎛/ ตัวเลือกใน Dropdown คัดกรองย่อย ---
   const options = useMemo(() => {
     return {
       dates: Array.from(
@@ -223,23 +215,20 @@ export default function CombinedCustomerCommentPortal() {
     };
   }, [comprehensiveReports]);
 
-  // --- 🔍 ระบบคัดกรองข้อมูลหลักคุมด้วยปุ่มบริษัทและฟิลเตอร์ย่อย ---
   const filteredData = useMemo(() => {
     return comprehensiveReports.filter((item) => {
-      // 1. กรองสลับค่ายตามปุ่มบริษัทด้านบน
       if (
         selectedCompany !== "ALL" &&
         (item.company || "").toUpperCase() !== selectedCompany.toUpperCase()
-      ) {
+      )
         return false;
-      }
 
-      // 2. กรองตามแถบค้นหาคำค้นด่วน
+      const query = searchQuery.trim().toLowerCase();
       const matchSearch =
-        searchQuery === "" ||
-        item.store_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        item.descriptions?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        item.auditor?.toLowerCase().includes(searchQuery.toLowerCase());
+        query === "" ||
+        item.store_name?.toLowerCase().includes(query) ||
+        item.descriptions?.toLowerCase().includes(query) ||
+        item.auditor?.toLowerCase().includes(query);
 
       const matchDate =
         filterDate === "ALL" ||
@@ -265,10 +254,8 @@ export default function CombinedCustomerCommentPortal() {
     filterReason,
   ]);
 
-  // --- 📉 ประมวลผลรวมสถิติตัวเลขและการ์ด KPI ภาพรวม ---
   const analytics = useMemo(() => {
     const total = filteredData.length;
-    // นับเฉพาะแถวที่เป็นเคส OOS ของขาดจริง
     const oosItems = filteredData.filter(
       (r) =>
         r.dataType === "oos" &&
@@ -277,7 +264,6 @@ export default function CombinedCustomerCommentPortal() {
         r.oos_reason !== "",
     );
     const totalOOS = oosItems.length;
-
     const reviewedItems = filteredData.filter((r) => r.rating !== undefined);
     const avgRating =
       reviewedItems.length > 0
@@ -286,10 +272,8 @@ export default function CombinedCustomerCommentPortal() {
             reviewedItems.length
           ).toFixed(1)
         : "0.0";
-
     const totalComments = filteredData.filter((r) => r.comments).length;
 
-    // สรุปสถิติราคาส่งให้ Recharts (คัดกรองคำนวณเฉพาะข้อมูลคีย์ราคาขายจริงเท่านั้น ป้องกันราคาสูญหาย)
     const accountStats: Record<
       string,
       { count: number; priceSum: number; promoSum: number }
@@ -318,7 +302,6 @@ export default function CombinedCustomerCommentPortal() {
     return { total, totalOOS, avgRating, totalComments, chartDataset };
   }, [filteredData]);
 
-  // --- 🌟 บันทึกความคิดเห็นประเมินผลดาวจำลอง ---
   const handleGiveFeedback = async (surveyId: string) => {
     const { value: formValues } = await Swal.fire({
       title: "⭐ จำลองการประเมินผลงานทีมสำรวจ",
@@ -344,15 +327,13 @@ export default function CombinedCustomerCommentPortal() {
       confirmButtonText: "บันทึกรีวิว",
       cancelButtonText: "ยกเลิก",
       confirmButtonColor: "#2563eb",
-      preConfirm: () => {
-        return {
-          rating: (document.getElementById("swal-rating") as HTMLSelectElement)
-            .value,
-          comment: (
-            document.getElementById("swal-comment") as HTMLTextAreaElement
-          ).value,
-        };
-      },
+      preConfirm: () => ({
+        rating: (document.getElementById("swal-rating") as HTMLSelectElement)
+          .value,
+        comment: (
+          document.getElementById("swal-comment") as HTMLTextAreaElement
+        ).value,
+      }),
     });
 
     if (formValues) {
@@ -366,7 +347,6 @@ export default function CombinedCustomerCommentPortal() {
             created_at: new Date().toISOString(),
           },
         ]);
-
         if (error) throw error;
         Swal.fire("สำเร็จ", "บันทึกรีวิวทดสอบเรียบร้อยครับ", "success");
         await fetchFeedbacks();
@@ -377,7 +357,6 @@ export default function CombinedCustomerCommentPortal() {
     }
   };
 
-  // --- ✍️ บันทึกการตอบกลับของแอดมิน (Admin Reply) ---
   const handleSaveReply = async (feedbackId: any, rowId: string) => {
     const text = replyTexts[rowId];
     if (!text || text.trim() === "") {
@@ -401,7 +380,6 @@ export default function CombinedCustomerCommentPortal() {
         .from("auditor_feedbacks")
         .update({ admin_reply: text })
         .eq("id", feedbackId);
-
       if (error) throw error;
       Swal.fire(
         "สำเร็จ",
@@ -417,7 +395,7 @@ export default function CombinedCustomerCommentPortal() {
 
   return (
     <div className="min-h-screen text-slate-800 font-sans pb-16 max-w-md mx-auto shadow-2xl bg-white border-x border-slate-200 relative">
-      {/* 🔮 TOP CONSOLE GLASS BAR */}
+      {/* TOP CONSOLE HEADER */}
       <div className="bg-slate-900 text-white sticky top-0 z-50 p-4 shadow-md space-y-3.5">
         <header className="flex justify-between items-center">
           <div className="flex items-center gap-2">
@@ -429,7 +407,7 @@ export default function CombinedCustomerCommentPortal() {
               />
             </div>
             <div>
-              <h1 className="text-xs font-black tracking-tight uppercase flex items-center gap-1">
+              <h1 className="text-xs font-black tracking-tight uppercase">
                 Customer View Controller
               </h1>
               <p className="text-[9px] text-cyan-400 font-bold leading-none mt-0.5">
@@ -440,13 +418,12 @@ export default function CombinedCustomerCommentPortal() {
           <button
             onClick={() => loadPortalData()}
             className="p-1.5 bg-slate-800 hover:bg-slate-700 rounded-lg transition-all"
-            title="รีเฟรชข้อมูล"
           >
             <RefreshCw className="w-3.5 h-3.5 text-slate-300" />
           </button>
         </header>
 
-        {/* 🏢 ปุ่มเลือกดูลูกค้าคู่ค้ากลาง (COMPANY SELECTOR TABS) */}
+        {/* COMPANY SELECTOR */}
         <div className="space-y-1">
           <label className="text-[9px] font-black tracking-wider text-slate-400 uppercase flex items-center gap-1">
             <Building2 className="w-3 h-3 text-cyan-400" />{" "}
@@ -465,7 +442,7 @@ export default function CombinedCustomerCommentPortal() {
           </div>
         </div>
 
-        {/* กล่องค้นหาข้อความด่วน */}
+        {/* SEARCH BAR */}
         <div className="relative">
           <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
           <input
@@ -477,7 +454,7 @@ export default function CombinedCustomerCommentPortal() {
           />
         </div>
 
-        {/* แผงฟิลเตอร์ Dropdowns ย่อย */}
+        {/* DROPDOWN FILTERS */}
         <div className="bg-slate-950 p-2 rounded-xl border border-slate-800/60 grid grid-cols-2 gap-1.5 text-[8px]">
           <div>
             <label className="font-bold text-slate-400 block mb-0.5">
@@ -551,7 +528,7 @@ export default function CombinedCustomerCommentPortal() {
         </div>
       </div>
 
-      {/* 📊 CORE INTERACTIVE METRICS */}
+      {/* KPI CARDS */}
       <div className="p-4 grid grid-cols-4 gap-2 text-center">
         <div className="bg-slate-900 text-white p-2.5 rounded-xl border border-slate-950 shadow-sm">
           <span className="text-[8px] font-bold text-slate-400 uppercase block">
@@ -588,14 +565,17 @@ export default function CombinedCustomerCommentPortal() {
         </div>
       </div>
 
-      {/* 📉 RECHARTS GRAPH */}
+      {/* 📉 RECHARTS CHART CONTAINER WRAPPER FIXED */}
       <div className="mx-4 mb-4 bg-white p-3 rounded-2xl border border-slate-200 shadow-sm">
         <h3 className="text-[9px] font-black text-blue-600 uppercase tracking-wider flex items-center gap-1 mb-2">
           <TrendingUp className="w-3.5 h-3.5" />{" "}
           สถิติวิเคราะห์เปรียบเทียบราคากลางเฉลี่ยรายห้างสาขา
         </h3>
-        <div className="w-full text-[8px]">
-          <ResponsiveContainer width="100%" height={160}>
+
+        {/* เอาเงื่อนไขครอบออก แล้วใช้กล่อง div คุมความกว้างและสไตล์ไว้แทนครับ */}
+        <div className="w-full text-[8px]" style={{ minWidth: 0 }}>
+          {/* 🟢 จุดสำคัญ: กำหนด height={160} และ minWidth={0} ลงไปที่ ResponsiveContainer ตรงๆ เพื่อตัดบั๊กตัวเลขติดลบและแสดงผลทันที */}
+          <ResponsiveContainer width="100%" height={160} minWidth={0}>
             <BarChart
               data={analytics.chartDataset}
               margin={{ top: 5, right: 5, left: -25, bottom: 0 }}
@@ -608,7 +588,9 @@ export default function CombinedCustomerCommentPortal() {
                 fontWeight="bold"
               />
               <YAxis stroke="#94a3b8" fontSize={8} fontWeight="bold" />
-              <Tooltip />
+              <Tooltip
+                contentStyle={{ fontSize: "9px", borderRadius: "8px" }}
+              />
               <Legend verticalAlign="top" height={20} iconSize={8} />
               <Bar
                 dataKey="ราคาปกติเฉลี่ย"
@@ -627,7 +609,7 @@ export default function CombinedCustomerCommentPortal() {
         </div>
       </div>
 
-      {/* 📂 TRI-TAB MANAGEMENT SYSTEM */}
+      {/* TRI-TAB CONTROLS */}
       <div className="mx-4 mb-4 p-1 bg-slate-200 rounded-xl flex gap-1 shadow-inner text-[10px] font-black">
         <button
           onClick={() => setActiveTab("oos")}
@@ -645,12 +627,12 @@ export default function CombinedCustomerCommentPortal() {
           onClick={() => setActiveTab("comments")}
           className={`flex-1 py-2 rounded-lg transition-all flex items-center justify-center gap-1 cursor-pointer ${activeTab === "comments" ? "bg-slate-900 text-white shadow-xs" : "text-slate-600 hover:bg-slate-300/40"}`}
         >
-          <MessageSquare className="w-3.5 h-3.5 text-blue-500" />{" "}
-          ฟีดแบ็กระบุบริษัท ({analytics.totalComments})
+          <MessageSquare className="w-3.5 h-3.5 text-blue-500" /> ฟีดแบ็ก (
+          {analytics.totalComments})
         </button>
       </div>
 
-      {/* ⚙️ DATA LIST TEMPLATE RENDER */}
+      {/* CARD LIST */}
       <div className="px-4 space-y-3.5">
         {loading ? (
           <p className="text-center py-10 text-xs font-bold text-slate-400 animate-pulse">
@@ -662,7 +644,7 @@ export default function CombinedCustomerCommentPortal() {
           </p>
         ) : (
           <>
-            {/* 🚨 แท็บที่ 1: บันทึกสินค้าขาดเชลฟ์ (OOS Alerts MODE - กรองเฉพาะไอเทมขาดจริงจาก View) */}
+            {/* OOS TAB */}
             {activeTab === "oos" &&
               filteredData
                 .filter(
@@ -679,7 +661,7 @@ export default function CombinedCustomerCommentPortal() {
                     <div className="absolute top-0 left-0 w-1.5 h-full bg-rose-500"></div>
                     <div className="flex justify-between items-start border-b border-slate-100 pb-2">
                       <div>
-                        <span className="bg-slate-950 text-white text-[8px] font-black px-2 py-0.5 rounded-md uppercase tracking-tight">
+                        <span className="bg-slate-950 text-white text-[8px] font-black px-2 py-0.5 rounded-md uppercase">
                           🏢 {row.company}: {row.account_name}
                         </span>
                         <h4 className="text-xs font-black text-slate-800 mt-1">
@@ -690,7 +672,6 @@ export default function CombinedCustomerCommentPortal() {
                         ⚠️ {row.oos_reason}
                       </span>
                     </div>
-
                     <div className="bg-slate-50 p-2 rounded-xl border text-[10px] space-y-0.5 font-semibold">
                       <p className="font-black text-slate-900">
                         📦 {row.descriptions}
@@ -715,7 +696,7 @@ export default function CombinedCustomerCommentPortal() {
                             onClick={() =>
                               window.open(row.price_tag_image, "_blank")
                             }
-                            className="h-10 w-full object-cover rounded-md border"
+                            className="h-10 w-full object-cover rounded-md border cursor-pointer"
                           />
                         ) : (
                           <div className="h-10 bg-slate-50 border border-dashed rounded-md flex items-center justify-center text-slate-300">
@@ -732,7 +713,7 @@ export default function CombinedCustomerCommentPortal() {
                             onClick={() =>
                               window.open(row.shelf_image, "_blank")
                             }
-                            className="h-10 w-full object-cover rounded-md border"
+                            className="h-10 w-full object-cover rounded-md border cursor-pointer"
                           />
                         ) : (
                           <div className="h-10 bg-slate-50 border border-dashed rounded-md flex items-center justify-center text-slate-300">
@@ -747,7 +728,7 @@ export default function CombinedCustomerCommentPortal() {
                             src={row.cma_image}
                             alt="CMA"
                             onClick={() => window.open(row.cma_image, "_blank")}
-                            className="h-10 w-full object-cover rounded-md border"
+                            className="h-10 w-full object-cover rounded-md border cursor-pointer"
                           />
                         ) : (
                           <div className="h-10 bg-slate-50 border border-dashed rounded-md flex items-center justify-center text-slate-300">
@@ -760,21 +741,21 @@ export default function CombinedCustomerCommentPortal() {
                     <div className="flex gap-1.5 pt-1 border-t border-slate-100">
                       <a
                         href={`tel:${row.contact_number || "065-806-4694"}`}
-                        className="flex-1 bg-emerald-600 text-white text-[9px] font-black py-2 rounded-xl text-center shadow-xs flex items-center justify-center gap-1"
+                        className="flex-1 bg-emerald-600 text-white text-[9px] font-black py-2 rounded-xl text-center flex items-center justify-center gap-1"
                       >
                         <Phone className="w-3 h-3" /> โทรจี้สั่งเติมของ DC
                       </a>
                       <button
                         onClick={() => {
-                          const txt = `⚠️ [แจ้งเตือนด่วนสินค้าขาดหน้าร้าน]\n🏢 ค่ายคู่ค้า: ${row.company}\n🏪 สาขา: ${row.store_name}\n📦 รายการ: ${row.descriptions}\n🚨 ปัญหา: ${row.oos_reason}\n📌 แผนหน้างาน: ${row.action_plan || "รอกรรมการเปิดใบสั่งซื้อเติมเชลฟ์ด่วนครับ"}`;
+                          const txt = `⚠️ [แจ้งเตือนด่วนสินค้าขาดหน้าร้าน]\n🏢 ค่ายคู่ค้า: ${row.company}\n🏪 สาขา: ${row.store_name}\n📦 รายการ: ${row.descriptions}\n🚨 ปัญหา: ${row.oos_reason}\n📌 แแผนหน้างาน: ${row.action_plan || "รอกรรมการเปิดใบสั่งซื้อด่วน"}`;
                           navigator.clipboard.writeText(txt);
                           Swal.fire(
                             "คัดลอกข้อความสำเร็จ",
-                            "นำไปวางสั่งการต่อในไลน์กลุ่มได้ทันทีครับพี่นิวาส",
+                            "นำไปวางสั่งการต่อในไลน์กลุ่มได้ทันทีครับพี่นิวัต",
                             "success",
                           );
                         }}
-                        className="flex-1 bg-amber-500 text-slate-950 text-[9px] font-black py-2 rounded-xl text-center shadow-xs flex items-center justify-center gap-1 cursor-pointer"
+                        className="flex-1 bg-amber-500 text-slate-950 text-[9px] font-black py-2 rounded-xl text-center flex items-center justify-center gap-1 cursor-pointer"
                       >
                         <Copy className="w-3 h-3" /> คัดลอกส่งต่อใน LINE
                       </button>
@@ -782,7 +763,7 @@ export default function CombinedCustomerCommentPortal() {
                   </div>
                 ))}
 
-            {/* 💵 แท็บที่ 2: รายงานราคาขายและโปรโมชันคู่แข่ง (Price Surveys MODE - กรองดึงตัวเลขราคาของจริงออกมาแสดง) */}
+            {/* PRICE TAB */}
             {activeTab === "price" &&
               filteredData
                 .filter((r) => r.dataType === "price")
@@ -801,18 +782,16 @@ export default function CombinedCustomerCommentPortal() {
                         </h4>
                       </div>
                       <span className="text-[9px] text-slate-400 font-bold block">
-                        เขตพื้นที่: {row.area}
+                        Area: {row.area}
                       </span>
                     </div>
-
                     <p className="font-black text-slate-900 text-xs">
                       📦 {row.descriptions}
                     </p>
-
                     <div className="grid grid-cols-2 gap-2 text-center font-mono">
                       <div className="bg-slate-900 text-white p-2 rounded-xl border">
                         <span className="text-[8px] font-bold text-slate-400 block font-sans">
-                          💵 ราคาขายปกติ
+                          💵 ราคาปกติ
                         </span>
                         <p className="text-sm font-black text-cyan-400 mt-0.5">
                           {row.price || "0.00"}{" "}
@@ -821,7 +800,7 @@ export default function CombinedCustomerCommentPortal() {
                       </div>
                       <div className="bg-orange-50 border border-orange-200 p-2 rounded-xl">
                         <span className="text-[8px] font-bold text-orange-500 block font-sans">
-                          🔥 จัดราคาโปรโมชัน
+                          🔥 ราคาโปรโมชัน
                         </span>
                         <p className="text-sm font-black text-orange-700 mt-0.5">
                           {row.promo_price || "0.00"}{" "}
@@ -829,10 +808,9 @@ export default function CombinedCustomerCommentPortal() {
                         </p>
                       </div>
                     </div>
-
                     {row.promo_details && (
-                      <div className="bg-amber-50 p-2 rounded-xl border border-amber-100 text-[9px] font-bold text-amber-800 leading-tight">
-                        📝 รายละเอียดของแถม/กลยุทธ์: {row.promo_details}
+                      <div className="bg-amber-50 p-2 rounded-xl border border-amber-100 text-[9px] font-bold text-amber-800">
+                        📝 ของแถม/กลยุทธ์: {row.promo_details}
                       </div>
                     )}
 
@@ -860,11 +838,10 @@ export default function CombinedCustomerCommentPortal() {
                             }
                             className="w-9 h-9 object-cover rounded-md border cursor-pointer"
                           />
-                          <span>ชั้นวางสินค้า</span>
+                          <span>ชั้นวาง</span>
                         </div>
                       )}
                     </div>
-
                     <div className="pt-2.5 border-t border-slate-100 flex justify-between items-center">
                       <span className="text-[9px] font-bold text-slate-400">
                         ผู้ส่งงาน: {row.auditor || "ไม่ระบุ"}
@@ -879,7 +856,7 @@ export default function CombinedCustomerCommentPortal() {
                   </div>
                 ))}
 
-            {/* 💬 แท็บที่ 3: ตรวจสอบกล่องฟีดแบ็กและตอบกลับคู่ค้า (Customer Reviews & Reply MODE) */}
+            {/* COMMENTS TAB */}
             {activeTab === "comments" &&
               filteredData
                 .filter((r) => r.comments)
@@ -896,14 +873,12 @@ export default function CombinedCustomerCommentPortal() {
                         {row.rating} <Star className="w-3 h-3 fill-amber-500" />
                       </div>
                     </div>
-
-                    <div className="p-2.5 bg-indigo-50 border border-indigo-100 rounded-xl text-[10px] text-slate-700 leading-relaxed font-semibold">
+                    <div className="p-2.5 bg-indigo-50 border border-indigo-100 rounded-xl text-[10px] text-slate-700 font-semibold">
                       <p className="text-[9px] text-indigo-500 font-black uppercase mb-0.5">
                         💬 ข้อความความเห็น:
                       </p>
                       {row.comments}
                     </div>
-
                     {row.admin_reply && (
                       <div className="p-2.5 bg-emerald-50 border border-emerald-100 rounded-xl text-[10px] text-slate-700 space-y-0.5 ml-4">
                         <p className="text-[9px] text-emerald-600 font-black uppercase flex items-center gap-0.5">
@@ -915,7 +890,6 @@ export default function CombinedCustomerCommentPortal() {
                         </p>
                       </div>
                     )}
-
                     <div className="pt-2 border-t border-slate-100 ml-4 space-y-1.5">
                       <div className="flex items-center gap-1 text-[9px] font-bold text-slate-400">
                         <CornerDownRight className="w-3 h-3" />
@@ -960,7 +934,7 @@ export default function CombinedCustomerCommentPortal() {
         )}
       </div>
 
-      {/* 🟢 ปุ่มวาร์ปกลับหน้ากูรูคอนโซลหลักพนักงาน */}
+      {/* FOOTER ACTION */}
       <div className="mt-8 flex justify-center">
         <button
           onClick={() => router.push("/")}
