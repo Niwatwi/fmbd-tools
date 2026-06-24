@@ -12,6 +12,7 @@ import {
 import { useRouter } from "next/navigation";
 import { supabase } from "../../lib/supabase";
 import Swal from "sweetalert2";
+import imageCompression from "browser-image-compression";
 
 interface ProductRow {
   descriptions: string;
@@ -447,14 +448,32 @@ export default function CompleteRightThemeInputPage() {
   };
 
   // 🟢 แก้ไขจุดที่ 1: รวบการทำงานเก็บ State ของไฟล์และ URL จำลองไว้ในคำสั่งเดียว
-  const handleRowImg = (
+  const handleRowImg = async (
     e: React.ChangeEvent<HTMLInputElement>,
     id: number,
     field: "priceTagImg" | "shelfImg" | "cmaImg",
   ) => {
     const file = e.target.files?.[0];
-    if (file) {
-      const previewUrl = URL.createObjectURL(file);
+    if (!file) return;
+
+    if (file.size === 0) {
+      alert("รูปภาพนี้ไม่สามารถใช้งานได้ กรุณาเลือกรูปภาพอื่นครับ");
+      return;
+    }
+
+    try {
+      // 🟢 ตั้งค่า Option บังคับแปลงเป็น image/jpeg และคุมขนาดไม่ให้เกิน 600KB
+      const options = {
+        maxSizeMB: 0.6,
+        maxWidthOrHeight: 1280,
+        useWebWorker: true,
+        fileType: "image/jpeg", // บรรทัดนี้จะเปลี่ยน .heic ของ iPhone ให้เป็น .jpg ทันทีครับ
+      };
+
+      // ทำการบีบอัดและแปลงฟอร์แมตไฟล์
+      const compressedFile = await imageCompression(file, options);
+      const previewUrl = URL.createObjectURL(compressedFile);
+
       const fileField =
         field === "priceTagImg"
           ? "priceTagFile"
@@ -465,10 +484,13 @@ export default function CompleteRightThemeInputPage() {
       setItems((prev) =>
         prev.map((item) =>
           item.id === id
-            ? { ...item, [field]: previewUrl, [fileField]: file }
+            ? { ...item, [field]: previewUrl, [fileField]: compressedFile }
             : item,
         ),
       );
+    } catch (error) {
+      console.error("Error compressing image:", error);
+      alert("เกิดข้อผิดพลาดในการจัดการรูปภาพ กรุณาลองใหม่อีกครั้งครับ");
     }
   };
 
@@ -519,7 +541,7 @@ export default function CompleteRightThemeInputPage() {
       Swal.fire({
         icon: "error",
         title: "กรอกข้อมูลสินค้าซ้ำซ้อน",
-        text: "⚠️ พี่นิวาสครับ พนักงานมีการกรอกสินค้าตัวเดียวกันซ้ำมาสองบรรทัดในฟอร์มนี้ รบกวนตรวจสอบอีกครั้งครับ!",
+        text: "⚠️ พี่นิวัฒน์ครับ พนักงานมีการกรอกสินค้าตัวเดียวกันซ้ำมาสองบรรทัดในฟอร์มนี้ รบกวนตรวจสอบอีกครั้งครับ!",
         confirmButtonColor: "#d33",
       });
       setLoading(false);
@@ -582,7 +604,7 @@ export default function CompleteRightThemeInputPage() {
                   Swal.fire({
                     icon: "error",
                     title: "ระลึกประวัติซ้ำในระบบ",
-                    text: `❌ สินค้า [${item.product}] ของค่าย ${item.company} เคยถูกส่งข้อมูลขาดแคลนของร้านนี้ในวันนี้ไปแล้วครับพี่นิวาส!`,
+                    text: `❌ สินค้า [${item.product}] ของค่าย ${item.company} เคยถูกส่งข้อมูลขาดแคลนของร้านนี้ในวันนี้ไปแล้วครับพี่นิวัฒน์!`,
                     confirmButtonColor: "#d33",
                   });
                   setLoading(false);
