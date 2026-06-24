@@ -612,6 +612,7 @@ export default function CompleteRightThemeInputPage() {
             account: matchedStoreData?.account || null,
             province: matchedStoreData?.province || null,
             region: matchedStoreData?.region || null,
+            auditor_type: selectedAuditorType,
           },
         ])
         .select()
