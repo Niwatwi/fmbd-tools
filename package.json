@@ -9,10 +9,11 @@
     "lint": "next lint"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.107.0",
+    "@supabase/supabase-js": "^2.108.2",
     "axios": "^1.17.0",
     "browser-image-compression": "^2.0.2",
     "chart.js": "^4.5.1",
+    "heic-convert": "^2.1.0",
     "html5-qrcode": "^2.3.8",
     "lucide-react": "^0.400.0",
     "next": "^16.2.9",

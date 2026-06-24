@@ -687,7 +687,7 @@ export default function CompleteRightThemeInputPage() {
 
         itemsToSave.push({
           visit_id: visitData.id,
-          company: item.company || "RIVERPRO",
+          company: item.company || "RVP",
           barcode: isNoOos ? null : masterRow?.barcode || null,
           descriptions: isNoOos ? "ไม่มีสินค้าที่ OOS" : item.product,
           oos_reason: item.oosReason,
@@ -697,8 +697,9 @@ export default function CompleteRightThemeInputPage() {
           price_tag_image: finalPriceTagUrl,
           shelf_image: finalShelfUrl,
           cma_image: finalCmaUrl,
-          action_plan: item.actionPlan || null,
+          action_plan: isNoOos ? "ไม่ต้องสั่งการ" : item.actionPlan || null,
           expected_delivery_date: item.expectedDate || null,
+          status: isNoOos ? "Verified" : "Pending",
         });
       }
 
