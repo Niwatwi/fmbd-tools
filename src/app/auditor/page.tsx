@@ -139,7 +139,7 @@ export default function AuditorPage() {
     [],
   );
 
-  // 🚨 ฟังก์ชันส่งคำชี้แจง + อัปโหลดรูปพรูฟหน้าร้านในจบในคลิกเดียว
+  // 🚨 ฟังก์ชันส่งคำชี้แจง + อัปโหลดรูปพรูฟหน้าร้าน (เวอร์ชันดักจับ Error ละเอียด)
   const handleSendCommentReply = async (commentId: number) => {
     const text = replyTexts[commentId]?.trim();
     const file = replyFiles[commentId];
@@ -157,38 +157,47 @@ export default function AuditorPage() {
     let uploadedImageUrl = null;
 
     try {
-      // 1. ถ้ามีการแนบไฟล์รูปมาด้วย ให้ทำกระบวนการส่งขึ้น Supabase Storage ก่อน
+      // 1. กระบวนการอัปโหลดรูปภาพ
       if (file) {
         const fileExt = file.name.split(".").pop();
         const fileName = `${commentId}_${Date.now()}.${fileExt}`;
         const filePath = `replies/${fileName}`;
 
-        // 💡 พี่นิวัตสามารถเปลี่ยนชื่อ Bucket "oos_images" ตรงนี้ตามคลังที่พี่สร้างไว้ในฐานข้อมูลได้เลยครับ
         const { error: uploadError } = await supabase.storage
-          .from("oos_images")
-          .upload(filePath, file);
+          .from("oos-images")
+          .upload(filePath, file, {
+            contentType: file.type || "image/png",
+            cacheControl: "3600",
+            upsert: true, // 🟢 เปลี่ยนเป็น true เพื่อให้อนุญาตเขียนไฟล์ทับได้แบบไร้รอยต่อครับพี่
+          });
 
-        if (uploadError) throw uploadError;
+        // 💥 ถ้าระบบ Storage พัง ให้พ่นแจ้งเตือนละเอียดออกมาดูทันที
+        if (uploadError) {
+          throw new Error(`[Storage Error] ${uploadError.message}`);
+        }
 
         const {
           data: { publicUrl },
-        } = supabase.storage.from("oos_images").getPublicUrl(filePath);
+        } = supabase.storage.from("oos-images").getPublicUrl(filePath);
 
         uploadedImageUrl = publicUrl;
       }
 
-      // 2. อัปเดตข้อมูล Text และ URL รูปภาพพรูฟพร้อมกันลงตาราง oos_comments
+      // 2. อัปเดตข้อมูลลงตาราง oos_comments
       const { error: updateError } = await supabase
         .from("oos_comments")
         .update({
           auditor_reply: text,
-          reply_image_url: uploadedImageUrl, // ยิง URL รูปเข้าฐานข้อมูล
+          reply_image_url: uploadedImageUrl,
           status: "auditor_replied",
           auditor: displayName,
         })
         .eq("id", commentId);
 
-      if (updateError) throw updateError;
+      // 💥 ถ้าตาราง Database พัง ให้พ่นแจ้งเตือนละเอียดออกมาดูทันที
+      if (updateError) {
+        throw new Error(`[Database Error] ${updateError.message}`);
+      }
 
       Swal.fire({
         toast: true,
@@ -199,7 +208,6 @@ export default function AuditorPage() {
         timer: 2500,
       });
 
-      // 3. ล้างค่า State ของไอดีนั้น ๆ ออกจากสเตตหน้าร้าน
       setReplyTexts((prev) => {
         const u = { ...prev };
         delete u[commentId];
@@ -212,10 +220,12 @@ export default function AuditorPage() {
       });
       setUrgentComments((prev) => prev.filter((item) => item.id !== commentId));
     } catch (err: any) {
+      // 🟢 แสดง Error จริงจากระบบคลาวด์ ไม่ต้องเดาอาการ
       Swal.fire({
         icon: "error",
-        title: "ระบบจัดเก็บรูปภาพขัดข้อง",
+        title: "บันทึกข้อมูลไม่สำเร็จ",
         text: err.message,
+        confirmButtonColor: "#ef4444",
       });
     } finally {
       setSubmittingReplyId(null);
