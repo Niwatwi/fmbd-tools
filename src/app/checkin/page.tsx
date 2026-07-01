@@ -2,7 +2,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import imageCompression from "browser-image-compression";
 import { useRouter } from "next/navigation";
 import Swal from "sweetalert2";
@@ -70,12 +70,23 @@ export default function CheckinPage() {
   const [leaveType, setLeaveType] = useState("");
   const [extraReason, setExtraReason] = useState("");
 
+  // 🏃‍♂️ 1. เพิ่มกลุ่ม State สำหรับกลไกไปช่วยงานต่างเขต (Cross Area)
+  const [isCrossArea, setIsCrossArea] = useState(false);
+  const [selectedCrossArea, setSelectedCrossArea] = useState("");
+
   // 🟢 เงื่อนไขตรวจสอบความจำเป็นในการถ่ายรูป (วันหยุดต่างๆ ไม่ต้องถ่ายรูป)
   const isPhotoRequired = ![
     "วันหยุด",
     "วันหยุดชดเชยนักขัตฤกษ์",
     "สลับวันหยุด",
   ].includes(attendanceType);
+
+  // 🏃‍♂️ 2. คัดกรองรายชื่อเขตทั้งหมดที่มีในระบบออกมาเป็นตัวเลือกโดยไม่ซ้ำกัน
+  const uniqueAreas = useMemo(() => {
+    return Array.from(
+      new Set(stores.map((s) => s.area).filter(Boolean)),
+    ).sort();
+  }, [stores]);
 
   const triggerCamera = () => {
     fileInputRef.current?.click();
@@ -199,9 +210,16 @@ export default function CheckinPage() {
     if (userCode) fetchTodayLogs();
   }, [userCode]);
 
+  // 🏃‍♂️ 3. สับเปลี่ยนลอจิกคัดกรองร้านค้า: รองรับทั้งระบบปกติและโหมดข้ามเขตไปช่วยงาน
   const baseStores = stores.filter((store) => {
     if (!userCode) return false;
     if (companyTag.includes("ADMIN")) return true;
+
+    // ✨ ฟีเจอร์ใหม่: ถ้าติ๊กเลือกช่วยงานต่างเขต ให้สลับไปกรองตามเขตพื้นที่ที่น้องเลือกชั่วคราวทันที
+    if (isCrossArea) {
+      if (!selectedCrossArea) return false;
+      return store.area?.toUpperCase() === selectedCrossArea.toUpperCase();
+    }
 
     const cleanUserCode = userCode.trim().toUpperCase();
     const firstLetter = cleanUserCode.charAt(0);
@@ -276,6 +294,14 @@ export default function CheckinPage() {
       });
     }
 
+    // ✨ เช็คความปลอดภัย: ถ้าไปช่วยงานต่างเขตแต่ลืมเลือกเขต
+    if (isStoreRequired && isCrossArea && !selectedCrossArea) {
+      return Swal.fire({
+        icon: "warning",
+        title: "กรุณาเลือกเขตที่ต้องการไปช่วยงานก่อนครับ",
+      });
+    }
+
     if (isStoreRequired && !selectedStore)
       return Swal.fire({ icon: "warning", title: "กรุณาเลือกร้านค้า" });
 
@@ -291,7 +317,6 @@ export default function CheckinPage() {
         text: "โปรดรอให้ระบบจับตำแหน่งสำเร็จ",
       });
 
-    // 🟢 แก้ไขเงื่อนไข: ตรวจเช็คเฉพาะประเภทงานที่ระบบบังคับให้ถ่ายรูปเท่านั้น
     if (isPhotoRequired && !imageFile)
       return Swal.fire({
         icon: "warning",
@@ -307,7 +332,7 @@ export default function CheckinPage() {
         .from("attendance_logs")
         .select("id, type, attendance_type")
         .eq("username", userCode)
-        .eq("type", isCheckIn ? "check-in" : "check-out") // 🟢 แก้ไขบั๊กแยกประเภท: ล็อกเช็คอินเทียบเช็คอิน เช็คเอ้าท์เทียบเช็คเอ้าท์
+        .eq("type", isCheckIn ? "check-in" : "check-out")
         .gte("created_at", `${today}T00:00:00`)
         .lte("created_at", `${today}T23:59:59`);
 
@@ -350,14 +375,20 @@ export default function CheckinPage() {
         duplicateNote = reason;
       }
 
+      // ✨ ประกอบร่างข้อความ Note: แทรกข้อมูลแท็กช่วยงานข้ามเขตเข้าไปอัตโนมัติเพื่อให้ผู้บริหารแยกแยะแผนงานได้ง่าย
       let finalNote = extraReason;
+      if (isCrossArea && selectedCrossArea) {
+        finalNote = finalNote
+          ? `[ช่วยงานต่างเขต: เขต ${selectedCrossArea}] ${finalNote}`
+          : `[ช่วยงานต่างเขต: เขต ${selectedCrossArea}]`;
+      }
+
       if (duplicateNote) {
         finalNote = finalNote
           ? `${finalNote} | (บันทึกซ้ำ: ${duplicateNote})`
           : `(บันทึกซ้ำ: ${duplicateNote})`;
       }
 
-      // 🟢 ปรับโครงสร้างรูปภาพ: วันหยุดไม่ต้องอัปโหลด ปล่อยผ่านเป็น null ได้เลยครับ
       let publicUrl = null;
       if (imageFile) {
         publicUrl = await uploadImageToStorage(imageFile);
@@ -449,6 +480,8 @@ export default function CheckinPage() {
         setAttendanceType("วันทำงานปกติ");
         setLeaveType("");
         setExtraReason("");
+        setIsCrossArea(false); // เคลียร์สถานะข้ามเขตหลังทำรายการเสร็จ
+        setSelectedCrossArea("");
         if (fileInputRef.current) fileInputRef.current.value = "";
       });
     } catch (err: any) {
@@ -581,6 +614,57 @@ export default function CheckinPage() {
 
         {isStoreRequired && (
           <div className="bg-white rounded-2xl p-4 shadow-sm space-y-3 animate-fadeIn">
+            {/* 🏃‍♂️ ✨ เพิ่มจุดที่ 1: Checkbox เปิดสวิตช์โหมดช่วยงานต่างเขตชั่วคราว */}
+            <div className="flex items-center space-x-2 pb-1.5 border-b border-slate-100">
+              <input
+                type="checkbox"
+                id="cross-area-toggle"
+                checked={isCrossArea}
+                onChange={(e) => {
+                  setIsCrossArea(e.target.checked);
+                  setSelectedCrossArea("");
+                  setSelectedChanel("");
+                  setSelectedAccount("");
+                  setSelectedStore("");
+                }}
+                className="w-4 h-4 text-blue-600 border-slate-300 rounded focus:ring-blue-500 cursor-pointer"
+              />
+              <label
+                htmlFor="cross-area-toggle"
+                className="text-xs font-black text-slate-700 cursor-pointer select-none flex items-center gap-1"
+              >
+                🏃‍♂️ ไปช่วยงานต่างเขต / วิ่งข้ามเขตพื้นที่ชั่วคราว
+              </label>
+            </div>
+
+            {/* 🏃‍♂️ ✨ เพิ่มจุดที่ 2: ดรอปดาวน์เลือกเขตพื้นที่ที่เดินทางไปช่วยงาน (จะแสดงขึ้นมาเฉพาะตอนติ๊กถูกเท่านั้น) */}
+            {isCrossArea && (
+              <div className="space-y-1.5 bg-blue-50/50 p-2.5 rounded-xl border border-blue-100 animate-fadeIn">
+                <label className="text-[10px] font-black text-blue-700 uppercase block">
+                  📍 กรุณาระบุเขตพื้นที่ๆ ท่านเดินทางไปช่วยงาน
+                </label>
+                <select
+                  value={selectedCrossArea}
+                  onChange={(e) => {
+                    setSelectedCrossArea(e.target.value);
+                    setSelectedChanel("");
+                    setSelectedAccount("");
+                    setSelectedStore("");
+                  }}
+                  className="w-full bg-white border border-blue-300 p-2.5 rounded-xl text-xs font-bold text-blue-900 outline-none focus:border-blue-500 shadow-sm"
+                >
+                  <option value="">
+                    -- คลิกเลือกเขตพื้นที่ช่วยงาน ({uniqueAreas.length} เขต) --
+                  </option>
+                  {uniqueAreas.map((area) => (
+                    <option key={area} value={area}>
+                      🗺️ เขต: {area}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
             <div className="grid grid-cols-2 gap-3">
               <select
                 value={selectedChanel}
@@ -669,7 +753,7 @@ export default function CheckinPage() {
           )}
         </div>
 
-        {/* 🟢 ซ่อนกล่อง Photo Upload โดยอัตโนมัติหากเลือกประเภทเป็น วันหยุด ต่างๆ */}
+        {/* ซ่อนกล่อง Photo Upload โดยอัตโนมัติหากเลือกประเภทเป็น วันหยุด ต่างๆ */}
         {isPhotoRequired && (
           <div className="bg-white rounded-2xl border border-slate-100 p-4">
             <input
