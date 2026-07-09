@@ -447,7 +447,6 @@ export default function CompleteRightThemeInputPage() {
     );
   };
 
-  // 🟢 แก้ไขจุดที่ 1: รวบการทำงานเก็บ State ของไฟล์และ URL จำลองไว้ในคำสั่งเดียว
   const handleRowImg = async (
     e: React.ChangeEvent<HTMLInputElement>,
     id: number,
@@ -462,15 +461,13 @@ export default function CompleteRightThemeInputPage() {
     }
 
     try {
-      // 🟢 ตั้งค่า Option บังคับแปลงเป็น image/jpeg และคุมขนาดไม่ให้เกิน 600KB
       const options = {
         maxSizeMB: 0.6,
         maxWidthOrHeight: 1280,
         useWebWorker: true,
-        fileType: "image/jpeg", // บรรทัดนี้จะเปลี่ยน .heic ของ iPhone ให้เป็น .jpg ทันทีครับ
+        fileType: "image/jpeg",
       };
 
-      // ทำการบีบอัดและแปลงฟอร์แมตไฟล์
       const compressedFile = await imageCompression(file, options);
       const previewUrl = URL.createObjectURL(compressedFile);
 
@@ -494,7 +491,6 @@ export default function CompleteRightThemeInputPage() {
     }
   };
 
-  // 🟢 แก้ไขจุดที่ 2: ดักจับ Error ตอนอัปโหลดรูปให้ขาด ไม่ยอมให้ผ่านถ้าเซฟรูปไม่สำเร็จ
   const uploadToSupabaseStorage = async (
     file: File,
     subFolder: string,
@@ -525,23 +521,29 @@ export default function CompleteRightThemeInputPage() {
     return urlData.publicUrl;
   };
 
+  // 🟢 ฟังก์ชันหลักในการตรวจสอบและคัดกรองรายการซ้ำซ้อน
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (loading) return; // 🔒 สกัดกั้น Double-Click ตั้งแต่ระดับมิลลิวินาทีแรก
     setLoading(true);
 
-    const validProducts = items
+    // 🟢 1. ดักจับข้อมูลซ้ำในฟอร์มเดียวกัน (เช็คจับคู่ สินค้า + เหตุผล)
+    const validFormKeys = items
       .filter((item) => item.oosReason !== "ไม่มีสินค้าที่ OOS" && item.product)
-      .map((item) => `${item.company}_${item.product}`);
+      .map(
+        (item) =>
+          `${item.company.toLowerCase()}_${item.product.toLowerCase()}_${item.oosReason}`,
+      );
 
-    const hasDuplicateInForm = validProducts.some(
-      (prod, idx) => validProducts.indexOf(prod) !== idx,
+    const hasDuplicateInForm = validFormKeys.some(
+      (key, idx) => validFormKeys.indexOf(key) !== idx,
     );
 
     if (hasDuplicateInForm) {
       Swal.fire({
         icon: "error",
         title: "กรอกข้อมูลสินค้าซ้ำซ้อน",
-        text: "⚠️ พี่นิวัฒน์ครับ พนักงานมีการกรอกสินค้าตัวเดียวกันซ้ำมาสองบรรทัดในฟอร์มนี้ รบกวนตรวจสอบอีกครั้งครับ!",
+        text: "⚠️ พี่นิวัตครับ พนักงานกรอกสินค้าตัวเดียวกันที่มีเหตุผลข้อเดียวกันซ้ำมาในฟอร์ม รบกวนตรวจเช็คอีกครั้งครับ!",
         confirmButtonColor: "#d33",
       });
       setLoading(false);
@@ -576,40 +578,41 @@ export default function CompleteRightThemeInputPage() {
     });
 
     try {
-      if (validProducts.length > 0) {
-        const { data: existingVisits } = await supabase
-          .from("store_visits")
-          .select("id")
-          .eq("date_key", dateKey)
-          .eq("store_name", selectedStore);
+      // 🟢 2. ดักจับข้อมูลซ้ำกับฐานข้อมูล (เช็ค ร้านเดิม / วันเดิม / สินค้าเดิม / เหตุผลเดิม)
+      const { data: existingVisits } = await supabase
+        .from("store_visits")
+        .select("id")
+        .eq("date_key", dateKey)
+        .eq("store_name", selectedStore);
 
-        if (existingVisits && existingVisits.length > 0) {
-          const visitIds = existingVisits.map((v) => v.id);
+      if (existingVisits && existingVisits.length > 0) {
+        const visitIds = existingVisits.map((v) => v.id);
 
-          const { data: duplicateCheck } = await supabase
-            .from("oos_items")
-            .select("descriptions, company")
-            .in("visit_id", visitIds);
+        const { data: duplicateCheck } = await supabase
+          .from("oos_items")
+          .select("descriptions, company, oos_reason")
+          .in("visit_id", visitIds);
 
-          if (duplicateCheck && duplicateCheck.length > 0) {
-            for (const item of items) {
-              if (item.oosReason !== "ไม่มีสินค้าที่ OOS") {
-                const isAlreadySaved = duplicateCheck.some(
-                  (dbItem) =>
-                    dbItem.descriptions === item.product &&
-                    dbItem.company === item.company,
-                );
+        if (duplicateCheck && duplicateCheck.length > 0) {
+          for (const item of items) {
+            if (item.oosReason !== "ไม่มีสินค้าที่ OOS") {
+              const isAlreadySaved = duplicateCheck.some(
+                (dbItem) =>
+                  dbItem.descriptions.toLowerCase() ===
+                    item.product.toLowerCase() &&
+                  dbItem.company.toLowerCase() === item.company.toLowerCase() &&
+                  dbItem.oos_reason === item.oosReason,
+              );
 
-                if (isAlreadySaved) {
-                  Swal.fire({
-                    icon: "error",
-                    title: "ระลึกประวัติซ้ำในระบบ",
-                    text: `❌ สินค้า [${item.product}] ของค่าย ${item.company} เคยถูกส่งข้อมูลขาดแคลนของร้านนี้ในวันนี้ไปแล้วครับพี่นิวัฒน์!`,
-                    confirmButtonColor: "#d33",
-                  });
-                  setLoading(false);
-                  return;
-                }
+              if (isAlreadySaved) {
+                Swal.fire({
+                  icon: "error",
+                  title: "ระลึกประวัติซ้ำในระบบ",
+                  text: `❌ สินค้า [${item.product}] ด้วยเหตุผล [${item.oosReason}] เคยบันทึกของร้านนี้ไปแล้วในวันนี้ครับพี่นิวัต!`,
+                  confirmButtonColor: "#d33",
+                });
+                setLoading(false);
+                return;
               }
             }
           }
@@ -620,33 +623,47 @@ export default function CompleteRightThemeInputPage() {
         (s) => s.store_name === selectedStore,
       );
 
-      const { data: visitData, error: visitError = null } = await (
-        supabase.from("store_visits") as any
-      )
-        .insert([
-          {
-            date_key: dateKey,
-            auditor: selectedAuditor,
-            area: selectedArea,
-            store_name: selectedStore,
-            store_code: matchedStoreData?.store_code || null,
-            chanel: matchedStoreData?.chanel || null,
-            account: matchedStoreData?.account || null,
-            province: matchedStoreData?.province || null,
-            region: matchedStoreData?.region || null,
-            auditor_type: selectedAuditorType,
-          },
-        ])
-        .select()
-        .single();
+      // 🟢 3. รียูส Visit ID เดิมของวันนี้ (ถ้ามีประวัติ visit อยู่แล้วให้ใช้ ID เดิม ไม่เปิดแถวใหม่ใน store_visits)
+      let targetVisitId = null;
+      const { data: currentDayVisit } = await supabase
+        .from("store_visits")
+        .select("id")
+        .eq("date_key", dateKey)
+        .eq("store_name", selectedStore)
+        .eq("auditor", selectedAuditor)
+        .maybeSingle();
 
-      if (visitError) throw visitError;
-      if (!visitData) throw new Error("ไม่สามารถสร้างชุดข้อมูลเยือนสาขาได้");
+      if (currentDayVisit) {
+        targetVisitId = currentDayVisit.id;
+      } else {
+        const { data: visitData, error: visitError } = await (
+          supabase.from("store_visits") as any
+        )
+          .insert([
+            {
+              date_key: dateKey,
+              auditor: selectedAuditor,
+              area: selectedArea,
+              store_name: selectedStore,
+              store_code: matchedStoreData?.store_code || null,
+              chanel: matchedStoreData?.chanel || null,
+              account: matchedStoreData?.account || null,
+              province: matchedStoreData?.province || null,
+              region: matchedStoreData?.region || null,
+              auditor_type: selectedAuditorType,
+            },
+          ])
+          .select()
+          .single();
+
+        if (visitError) throw visitError;
+        if (!visitData) throw new Error("ไม่สามารถสร้างชุดข้อมูลเยือนสาขาได้");
+        targetVisitId = visitData.id;
+      }
 
       const itemsToSave = [];
 
       for (const item of items) {
-        // 🟢 แก้ไขจุดที่ 3: ทำให้การเปรียบเทียบชื่อบริษัท (Company) ไม่สนใจตัวพิมพ์เล็กพิมพ์ใหญ่ ป้องกันหา Master รูปไม่เจอ
         const masterRow = dbProducts.find(
           (p) =>
             p.descriptions === item.product &&
@@ -659,7 +676,6 @@ export default function CompleteRightThemeInputPage() {
         let finalShelfUrl = null;
         let finalCmaUrl = null;
 
-        // 🟢 เพิ่ม try-catch ย่อย เพื่อดักจับ Error ขณะอัปโหลดรูปภาพแต่ละชิ้นโดยเฉพาะ
         if (!isNoOos) {
           try {
             if (item.priceTagFile) {
@@ -686,7 +702,7 @@ export default function CompleteRightThemeInputPage() {
         }
 
         itemsToSave.push({
-          visit_id: visitData.id,
+          visit_id: targetVisitId,
           company: item.company || "RVP",
           barcode: isNoOos ? null : masterRow?.barcode || null,
           descriptions: isNoOos ? "ไม่มีสินค้าที่ OOS" : item.product,
@@ -1291,7 +1307,8 @@ export default function CompleteRightThemeInputPage() {
                             className="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-xs font-bold bg-white outline-none"
                           >
                             <option value="">-- เลือกสินค้าที่ขาด --</option>
-                            {finalRowProducts.map((p) => (
+                            {/* 🟢 แก้ไข: ใช้ตัวแปร finalRowProducts ที่กรองไว้ด้านบน และระบุ Type (p: ProductRow) ป้องกันเครื่องฟ้อง any */}
+                            {finalRowProducts.map((p: ProductRow) => (
                               <option
                                 key={p.descriptions ?? ""}
                                 value={p.descriptions ?? ""}
