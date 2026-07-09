@@ -278,6 +278,63 @@ export default function CheckinPage() {
     return "ระบุรายละเอียดเพิ่มเติม";
   };
 
+  // 🟢 ฟังก์ชันช่วยแปลง Base64 ดิบ ให้เป็นไฟล์ Blob (น้ำหนักเบาและปลอดภัย)
+  const convertBase64ToBlob = (
+    base64Data: string,
+    contentType = "image/jpeg",
+  ) => {
+    // แยกส่วนหัว data:image/jpeg;base64, ออกไปถ้ามี
+    const parts = base64Data.split(";base64,");
+    const rawBase64 = parts[1] ? parts[1] : parts[0];
+
+    // ถอดรหัสข้อความ Base64 ออกมาเป็นไบนารี
+    const byteCharacters = atob(rawBase64);
+    const byteNumbers = new Array(byteCharacters.length);
+
+    for (let i = 0; i < byteCharacters.length; i++) {
+      byteNumbers[i] = byteCharacters.charCodeAt(i);
+    }
+
+    const byteArray = new Uint8Array(byteNumbers);
+    return new Blob([byteArray], { type: contentType });
+  };
+
+  // 🟢 ฟังก์ชันหลักในการอัปโหลด Base64 ขึ้น Bucket: attendance-images
+  const uploadBase64Attendance = async (
+    base64String: string,
+  ): Promise<string | null> => {
+    try {
+      if (!base64String) return null;
+
+      // 1. แปลง Base64 ให้กลายเป็นไฟล์ Blob ดิบ
+      const imageBlob = convertBase64ToBlob(base64String, "image/jpeg");
+
+      // 2. ตั้งชื่อไฟล์โครงสร้างเดียวกับระบบเดิมของพี่นิวัต (เช่น attendance/M6501_1717..._random.jpg)
+      const fileName = `attendance/${userCode}_${Date.now()}_${Math.random().toString(36).substring(7)}.jpg`;
+
+      // 3. ยิงไฟล์ดิบขึ้นสู่ระบบ Storage Bucket
+      const { error: uploadError } = await supabase.storage
+        .from("attendance-images")
+        .upload(fileName, imageBlob, {
+          contentType: "image/jpeg",
+          cacheControl: "3600",
+          upsert: false,
+        });
+
+      if (uploadError) throw uploadError;
+
+      // 4. ดึงลิงก์สาธารณะ (Public URL) สั้นๆ กลับมาใช้งาน
+      const { data } = supabase.storage
+        .from("attendance-images")
+        .getPublicUrl(fileName);
+
+      return data.publicUrl; // ได้รับ URL เช่น https://ryq.../storage/v1/object/public/attendance-images/attendance/xxx.jpg
+    } catch (err) {
+      console.error("Base64 Upload to attendance-images failed:", err);
+      return null;
+    }
+  };
+
   const handleSubmitCallVisit = async () => {
     if (attendanceType === "วันลา" && !leaveType) {
       return Swal.fire({
