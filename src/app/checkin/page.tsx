@@ -457,7 +457,7 @@ export default function CheckinPage() {
           latitude: deviceLat,
           longitude: deviceLng,
           image_url: publicUrl,
-          created_at: new Date().toISOString(),
+          //created_at: new Date().toISOString(),
           attendance_type: finalAttendanceType,
           note: finalNote,
           ...storeDataToInsert,
